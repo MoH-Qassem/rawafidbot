@@ -1,0 +1,64 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Databases (never commit live data)
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*-wal
+*-shm
+data/
+
+# Backups & exports (root only — keep package module rawafed_bot/reports/)
+/backups/
+/reports_output/
+*.xlsx
+
+# Caches / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Alembic local (keep migrations in package if any)
+alembic.ini
+
+# Local packaging artifacts (source under deployment/ docs OK)
+deployment/fadehost/
+deployment/*.zip
+*.zip
+
+# Local scratch / one-off helpers (not part of the product)
+/gen.py
+/part1.py
+/show_dead.py
+/show_lines.py
