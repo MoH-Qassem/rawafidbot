@@ -208,7 +208,6 @@ class TestTenButtonsAndFSM:
             (mm.BTN_REPORT, reports.report_financial, True),
             (mm.BTN_CONTRIB, contributions.contrib_entry, True),
             (mm.BTN_SETTINGS, settings.settings_entry, True),
-            (mm.BTN_ADVANCES, withdrawal.advances_entry, True),
         ]
         # Keep core 10 financial/settings entry points covered
         results = {}

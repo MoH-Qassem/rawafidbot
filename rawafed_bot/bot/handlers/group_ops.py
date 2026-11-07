@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 from typing import Optional
 
@@ -256,7 +257,43 @@ async def _ask_next(message: Message, mention: str, nxt: str):
         await message.reply(f"{mention}\n{ASK_AR.get(nxt, 'أكمل:')}")
 
 
+async def _restart_if_new_write(
+    message: Message,
+    state: FSMContext,
+    member: Member = None,
+) -> bool:
+    """If the user starts a fresh financial request, abandon the old FSM and restart."""
+    text = (message.text or "").strip()
+    if not text:
+        return False
+    # Short numeric / currency answers are field fills, not restarts
+    if re.fullmatch(r"[0-9٠-٩۰-۹.,٬،\s]+", text):
+        return False
+    # Single currency word answers stay in the current field flow
+    if text in {"دولار", "ليرة", "سوري", "سورية", "تركي", "تركية", "USD", "SYP", "TRY", "$"}:
+        return False
+    if not (
+        NLOperationParser.looks_like_write_start(text)
+        or NLOperationParser.detect_type(text)
+    ):
+        return False
+    with get_db_context() as db:
+        parsed = NLOperationParser.parse(db, text)
+        mem = member
+        if not mem and message.from_user:
+            mem = db.query(Member).filter_by(
+                telegram_id=message.from_user.id, is_active=True
+            ).first()
+            if mem:
+                db.expunge(mem)
+    if not mem:
+        return False
+    await start_group_operation(message, state, mem, parsed)
+    return True
+
+
 @router.message(GroupOpStates.collecting, F.text)
+@router.message(GroupOpStates.confirming, F.text)
 async def collect_missing(message: Message, state: FSMContext, member: Member = None):
     if not message.from_user:
         return
@@ -270,8 +307,25 @@ async def collect_missing(message: Message, state: FSMContext, member: Member = 
         await state.clear()
         await message.reply(f"{mention}\nتم إلغاء العملية.")
         return
+
+    # Stuck confirming/collecting: a brand-new request must work the first time
+    if await _restart_if_new_write(message, state, member):
+        return
+
+    current = await state.get_state()
+    if current == GroupOpStates.confirming.state:
+        await message.reply(
+            f"{mention}\nلديك عملية بانتظار التأكيد.\n"
+            "اضغط ✅ تأكيد أو ❌ إلغاء، أو أرسل طلباً جديداً بالكامل."
+        )
+        return
+
     field = data_all.get("gop_ask")
     if not field:
+        await state.clear()
+        await message.reply(
+            f"{mention}\nانتهت الجلسة السابقة. أعد إرسال الطلب مرة واحدة."
+        )
         return
     with get_db_context() as db:
         missing, err = _apply_field(gop, field, message.text, db)

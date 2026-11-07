@@ -93,11 +93,9 @@ def expense_mode_inline() -> InlineKeyboardMarkup:
 
 
 def withdrawal_mode_inline() -> InlineKeyboardMarkup:
+    """Kept for backwards-compatible imports; withdrawals no longer use modes."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="سحب نهائي من الحقوق", callback_data=pack(WD_MODE, "final"))],
-            [InlineKeyboardButton(text="عهدة (سلفة)", callback_data=pack(WD_MODE, "advance"))],
-            [InlineKeyboardButton(text="تسوية عهدة مفتوحة", callback_data=pack(WD_MODE, "settle"))],
             [InlineKeyboardButton(text="إلغاء", callback_data=pack(CONFIRM, "flow", "no"))],
         ]
     )

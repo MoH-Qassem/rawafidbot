@@ -8,7 +8,7 @@ import os
 APP_VERSION = "2.1.0"
 
 # Menu contract — bump whenever main reply-keyboard labels/layout change
-MENU_VERSION = "menu-v3-group-first-20261107"
+MENU_VERSION = "menu-v4-no-advances-20261107"
 
 # Fingerprint of the menu contract so logs prove which UI is running
 _MENU_FINGERPRINT = hashlib.sha256(MENU_VERSION.encode("utf-8")).hexdigest()[:10]

@@ -99,7 +99,8 @@ async def group_text_message(message: Message, state: FSMContext, bot: Bot, memb
     if not message.from_user or is_bot_message(message, bot.id):
         return
 
-    # Don't steal replies while collecting financial fields
+    # GroupOpStates messages are owned by group_ops (incl. restart-on-new-request).
+    # Do not fall through to IntentRouter «لم أفهم» while that FSM is active.
     cur_state = await state.get_state()
     if cur_state and str(cur_state).startswith("GroupOpStates"):
         return UNHANDLED

@@ -54,7 +54,19 @@ class IntentRouter:
                 "المساهمات، والتقارير. اكتب «يا محاسب، …» أو استخدم القائمة.",
             )
 
-        # Write operations (expense / deposit / withdrawal)
+        # Cash box / balance — before write soft-start so «رصيد الصندوق» never becomes write
+        if any(
+            k in body
+            for k in (
+                "رصيد", "كم معنا", "الصندوق", "كم لدينا", "كم عندنا",
+                "balance", "كم بالدولار", "كم بالليرة",
+            )
+        ) and not any(k in body for k in ("تسجيل", "سجل مصروف", "سجل إيداع", "سجل سحب", "سجّل")):
+            if not PermissionService.has_permission(db, member, VIEW_CASHBOX):
+                return IntentResult("denied", "⛔ ليست لديك صلاحية عرض الصندوق.")
+            return IntentResult("cashbox", IntentRouter._cashbox(db, body, caller_name))
+
+        # Write operations (expense / deposit / withdrawal) — including soft start
         parsed = NLOperationParser.parse(db, text)
         if parsed.op_type in {"expense", "deposit", "withdrawal"}:
             return IntentResult(
@@ -62,18 +74,11 @@ class IntentRouter:
                 "",
                 parsed_op=parsed,
             )
-
-        # Cash box / balance
-        if any(
-            k in body
-            for k in (
-                "رصيد", "كم معنا", "الصندوق", "كم لدينا", "كم عندنا",
-                "balance", "كم بالدولار", "كم بالليرة",
-            )
-        ):
-            if not PermissionService.has_permission(db, member, VIEW_CASHBOX):
-                return IntentResult("denied", "⛔ ليست لديك صلاحية عرض الصندوق.")
-            return IntentResult("cashbox", IntentRouter._cashbox(db, body, caller_name))
+        if NLOperationParser.looks_like_write_start(text):
+            # Ask for missing type/fields instead of «لم أفهم»
+            if not parsed.op_type and "op_type" not in parsed.missing:
+                parsed.missing.insert(0, "op_type")
+            return IntentResult("write_op", "", parsed_op=parsed)
 
         # Top spender / totals
         if "أكثر" in body and any(k in body for k in ("أنفق", "صرف", "مصروف")):

@@ -136,7 +136,6 @@ class TestAllMenuButtons:
             (mm.BTN_MY_PROFILE, settings_handlers.profile_entry),
             (mm.BTN_SETTINGS, settings_handlers.settings_entry),
             (mm.BTN_CONTRIB, contributions.contrib_entry),
-            (mm.BTN_ADVANCES, withdrawal.advances_entry),
         ]
         for label, handler in handlers:
             msg = _msg(label, uid)

@@ -69,6 +69,21 @@ class TestNLParser:
         assert "currency" in p.missing
         assert p.missing[0] == "currency"
 
+    def test_soft_register_start_routes_write_not_unknown(self, db):
+        seed_all(db)
+        mem = db.query(Member).filter_by(is_active=True).first()
+        r = IntentRouter.route(db, mem, "يا محاسب تسجيل", "أحمد")
+        assert r.intent == "write_op"
+        assert r.parsed_op is not None
+        assert "op_type" in r.parsed_op.missing
+
+    def test_full_withdraw_phrase_first_try(self, db):
+        seed_all(db)
+        mem = db.query(Member).filter_by(is_active=True).first()
+        r = IntentRouter.route(db, mem, "يا محاسب تسجيل سحب 100 دولار", "أحمد")
+        assert r.intent == "write_op"
+        assert r.parsed_op.op_type == "withdrawal"
+
     def test_intent_routes_to_write_op(self, db):
         seed_all(db)
         mem = db.query(Member).filter_by(is_active=True).first()

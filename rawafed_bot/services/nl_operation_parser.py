@@ -16,10 +16,24 @@ _AMOUNT_RE = re.compile(
     r"([0-9٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹]+(?:[.,٬،][0-9٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹]+)?)"
 )
 
-EXPENSE_WORDS = ("مصروف", "مصاريف", "نفقة", "صرفت", "صرف", "سجل مصروف", "سجّل مصروف")
-DEPOSIT_WORDS = ("إيداع", "ايداع", "أودع", "اودع", "سجل إيداع", "سجّل إيداع")
-WITHDRAW_WORDS = ("سحب", "اسحب", "سجل سحب", "سجّل سحب")
+EXPENSE_WORDS = (
+    "مصروف", "مصاريف", "نفقة", "صرفت", "صرف",
+    "سجل مصروف", "سجّل مصروف", "تسجيل مصروف", "تسجيل المصروف",
+)
+DEPOSIT_WORDS = (
+    "إيداع", "ايداع", "أودع", "اودع",
+    "سجل إيداع", "سجّل إيداع", "تسجيل إيداع", "تسجيل ايداع", "تسجيل الإيداع",
+)
+WITHDRAW_WORDS = (
+    "سحب", "اسحب", "أسحب",
+    "سجل سحب", "سجّل سحب", "تسجيل سحب", "تسجيل السحب",
+)
 DEBT_WORDS = ("سداد دين", "تسديد دين", "سدد دين", "سداد مستحق")
+
+# Soft start: user wants to register something but type may be missing
+WRITE_START_WORDS = (
+    "تسجيل", "سجل", "سجّل", "أضف", "اضف", "قيد", "عملية مالية",
+)
 
 NOISE = re.compile(
     r"(?:يا\s+)?محاسب|سجل|سجّل|تسجيل|من فضلك|رجاءً|رجاء|من فضلك|على|شراء|بخصوص",
@@ -56,7 +70,33 @@ class NLOperationParser:
         # "صرفت 75 دولاراً على ..."
         if re.search(r"صرف\w*\s+\d", t.translate(_ARABIC_DIGIT_MAP)) or "صرفت" in t:
             return "expense"
+        # Menu button labels (emoji prefix ok)
+        if "تسجيل مصروف" in t or t.endswith("مصروف") and "تسجيل" in t:
+            return "expense"
+        if "تسجيل إيداع" in t or "تسجيل ايداع" in t:
+            return "deposit"
+        if "تسجيل سحب" in t:
+            return "withdrawal"
         return None
+
+    @staticmethod
+    def looks_like_write_start(text: str) -> bool:
+        """True when the user is starting a financial write even without a clear type."""
+        body = strip_address_prefix(text or "")
+        if not body:
+            return False
+        # History / read queries — not a write start
+        if any(
+            k in body
+            for k in (
+                "سجل العمليات", "آخر عشر", "آخر 10", "اعرض آخر",
+                "رصيد", "كم معنا", "التقرير", "من لم يسدد",
+            )
+        ):
+            return False
+        if NLOperationParser.detect_type(body):
+            return True
+        return any(w in body for w in WRITE_START_WORDS)
 
     @staticmethod
     def parse(db: Session, text: str) -> ParsedOperation:

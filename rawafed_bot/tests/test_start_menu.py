@@ -59,7 +59,7 @@ def _msg(uid=111111111, chat_type="private", chat_id=None):
 
 class TestMenuContract:
     def test_menu_version_and_build_bound(self):
-        assert MENU_VERSION.startswith("menu-v3")
+        assert MENU_VERSION.startswith("menu-v4")
         assert BUILD_ID.startswith("2.1.0+")
         assert START_HANDLER.endswith("start.cmd_start")
 
@@ -69,7 +69,7 @@ class TestMenuContract:
         assert "📁 تصدير Excel" not in labels
         assert "🤝 المساهمات والعهد" not in labels
         assert mm.BTN_REPORT in labels
-        assert mm.BTN_ADVANCES in labels
+        assert mm.BTN_ADVANCES not in labels
         assert mm.BTN_WEEKLY in labels
         assert mm.BTN_MONTHLY in labels
         assert mm.BTN_EXPORT == "📥 تصدير Excel"
@@ -133,7 +133,7 @@ class TestStartRegistered:
         kb = msg.answer.await_args.kwargs["reply_markup"]
         labels = {b.text for row in kb.keyboard for b in row}
         assert mm.BTN_GUIDE in labels
-        assert mm.BTN_ADVANCES in labels
+        assert mm.BTN_ADVANCES not in labels
         assert mm.BTN_ROLES not in labels  # non-CEO without manage roles
 
 
@@ -177,7 +177,5 @@ class TestButtonHandlersExist:
             covered |= mm.texts_for(btn) if btn in mm.LEGACY or True else {btn}
             covered.add(btn)
         assert required <= covered
-        # Advances is new and must be distinct
-        assert mm.BTN_ADVANCES not in {
-            mm.BTN_CONTRIB, mm.BTN_WITHDRAW, mm.BTN_DEBTS
-        }
+        # Advances removed from the live menu
+        assert mm.BTN_ADVANCES not in set(mm.all_member_buttons())

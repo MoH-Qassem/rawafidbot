@@ -15,6 +15,7 @@ BTN_HISTORY = "📒 سجل العمليات"
 BTN_MEMBERS = "👥 حسابات الأعضاء"
 BTN_CONTRIB = "🤝 طلبات المساهمات"
 BTN_DEBTS = "💸 الديون والمستحقات"
+# Deprecated label kept so old Telegram keyboards still get a polite reply
 BTN_ADVANCES = "📦 العهد المالية"
 
 BTN_REPORT = "📊 التقرير المالي"
@@ -33,7 +34,7 @@ BTN_MAIN = "🏠 القائمة الرئيسية"
 LEGACY = {
     BTN_HISTORY: {"📋 سجل العمليات", "سجل العمليات"},
     BTN_DEBTS: {"📒 الديون والمستحقات", "الديون والمستحقات"},
-    BTN_CONTRIB: {"🤝 المساهمات والعهد", "طلبات المساهمات", "المساهمات والعهد"},
+    BTN_CONTRIB: {"🤝 المساهمات والعهد", "طلبات المساهمات", "المساهمات والعهد", "🤝 طلبات المساهمات"},
     BTN_REPORT: {"📊 التقارير المالية", "التقارير المالية"},
     BTN_EXPORT: {"📁 تصدير Excel", "تصدير Excel"},
     BTN_ROLES: {"🏢 المناصب والصلاحيات", "إدارة المناصب", "صلاحيات الأعضاء"},
@@ -57,7 +58,7 @@ BTN_REPORTS = BTN_REPORT
 def all_member_buttons() -> list[str]:
     return [
         BTN_CASHBOX, BTN_EXPENSE, BTN_DEPOSIT, BTN_WITHDRAW, BTN_HISTORY,
-        BTN_MEMBERS, BTN_CONTRIB, BTN_DEBTS, BTN_ADVANCES,
+        BTN_MEMBERS, BTN_CONTRIB, BTN_DEBTS,
         BTN_REPORT, BTN_MONTHLY, BTN_WEEKLY, BTN_EXPORT,
         BTN_MY_PROFILE, BTN_SETTINGS,
         BTN_GUIDE, BTN_MAIN,
@@ -82,7 +83,7 @@ def main_menu_keyboard(is_ceo: bool = False, can_roles: bool = None) -> ReplyKey
         [KeyboardButton(text=BTN_HISTORY)],
         # 2) الحسابات والالتزامات
         [KeyboardButton(text=BTN_MEMBERS), KeyboardButton(text=BTN_CONTRIB)],
-        [KeyboardButton(text=BTN_DEBTS), KeyboardButton(text=BTN_ADVANCES)],
+        [KeyboardButton(text=BTN_DEBTS)],
         # 3) التقارير
         [KeyboardButton(text=BTN_REPORT), KeyboardButton(text=BTN_MONTHLY)],
         [KeyboardButton(text=BTN_WEEKLY), KeyboardButton(text=BTN_EXPORT)],

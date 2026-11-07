@@ -41,10 +41,11 @@ class TestEntryPoint:
 
 
 class TestMenuAndRouters:
-    def test_menu_v3_loaded(self):
-        assert MENU_VERSION.startswith("menu-v3-group-first")
+    def test_menu_v4_loaded(self):
+        assert MENU_VERSION.startswith("menu-v4-no-advances")
         labels = {b.text for row in mm.main_menu_keyboard(is_ceo=True).keyboard for b in row}
-        assert mm.BTN_ADVANCES in labels
+        assert mm.BTN_ADVANCES not in labels
+        assert mm.BTN_WITHDRAW in labels
         assert mm.BTN_EXPORT == "📥 تصدير Excel"
         assert "📊 التقارير المالية" not in labels
 
