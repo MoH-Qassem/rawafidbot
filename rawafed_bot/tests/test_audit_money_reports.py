@@ -65,11 +65,12 @@ class TestReportsMatchLedger:
             db, m(40, "USD", db), cur.id, cat_id(db), mem.id, "p", mem.id, "rp-p"
         )
 
-        assert cash_box_balance(db, cur.id) == m(710, "USD", db)
+        # Pocket expense does not hit cash (1000 - 250 = 750)
+        assert cash_box_balance(db, cur.id) == m(750, "USD", db)
         assert expense_balance(db, cur.id) == m(290, "USD", db)
 
         text = ReportService.cash_box_report(db)
-        assert "710.00" in text or "710" in text
+        assert "750.00" in text or "750" in text
 
         rows = QueryService.cash_box_balances(db)
         usd_row = next(r for r in rows if r["currency"].code == "USD")

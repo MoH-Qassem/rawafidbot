@@ -54,10 +54,14 @@ def _perm_keyboard(db, rid: int) -> InlineKeyboardMarkup:
 
 @router.message(F.text.in_(texts_for(BTN_ROLES)))
 async def roles_entry(message: Message, state: FSMContext, member: Member):
+    from rawafed_bot.bot.member_ref import member_ids
+
+    await state.clear()
+    _, tid = member_ids(member)
     with get_db_context() as db:
         try:
-            AuthService.require_permission(db, member.telegram_id, MANAGE_ROLES)
-        except PermissionError as exc:
+            AuthService.require_permission(db, tid, MANAGE_ROLES)
+        except (PermissionError, PermissionErrorDenied) as exc:
             await message.answer(str(exc))
             return
     await state.set_state(RoleAdminStates.menu)
@@ -160,7 +164,10 @@ async def roles_actions(callback: CallbackQuery, state: FSMContext, member: Memb
 
         if action == "create":
             await state.set_state(RoleAdminStates.creating_name)
-            await callback.message.edit_text("أرسل اسم المنصب بالعربية:")
+            await callback.message.edit_text(
+                "أرسل اسم المنصب (عربي أو إنجليزي، بحرية):\n"
+                "مثال: مدقق داخلي"
+            )
             await callback.answer()
             return
 
@@ -286,31 +293,54 @@ async def toggle_perm(callback: CallbackQuery, member: Member):
 
 @router.message(RoleAdminStates.creating_name)
 async def create_role_name(message: Message, state: FSMContext, member: Member):
+    from rawafed_bot.bot.helpers import release_if_menu_button
+    from rawafed_bot.bot.member_ref import member_ids, member_is_ceo
+
+    released = await release_if_menu_button(message, state)
+    if released is not None:
+        return released
     name = (message.text or "").strip()
-    if not name:
-        await message.answer("الاسم مطلوب.")
+    if not name or len(name) > 80:
+        await message.answer("أرسل اسماً واضحاً للمنصب (حتى 80 حرفاً).")
         return
     await state.update_data(role_name=name)
     await state.set_state(RoleAdminStates.creating_code)
-    await message.answer("أرسل رمزاً لاتينياً للمنصب (مثال: auditor):")
+    await message.answer(
+        "أرسل رمزاً لاتينياً اختيارياً (مثال: auditor)\n"
+        "أو اكتب <b>تخطي</b> ليُولَّد الرمز تلقائياً."
+    )
 
 
 @router.message(RoleAdminStates.creating_code)
 async def create_role_code(message: Message, state: FSMContext, member: Member):
-    code = (message.text or "").strip()
+    from rawafed_bot.bot.helpers import release_if_menu_button
+    from rawafed_bot.bot.member_ref import member_ids, member_is_ceo
+
+    released = await release_if_menu_button(message, state)
+    if released is not None:
+        return released
+    raw = (message.text or "").strip()
     data = await state.get_data()
-    with get_db_context() as db:
-        try:
-            actor = AuthService.require_permission(db, member.telegram_id, MANAGE_ROLES)
-            role = PermissionService.create_role(db, data["role_name"], code, actor)
-        except (PermissionError, PermissionErrorDenied) as exc:
-            await message.answer(str(exc))
-            return
-    await state.clear()
-    await message.answer(
-        f"✅ تم إنشاء المنصب: {role.name_ar} ({role.code})",
-        reply_markup=main_menu_keyboard(),
-    )
+    name = data.get("role_name") or "منصب"
+    if raw in {"تخطي", "-", "auto", "آلي", "الي"}:
+        code = PermissionService.suggest_role_code(name)
+    else:
+        code = raw
+    _, tid = member_ids(member)
+    try:
+        with get_db_context() as db:
+            actor = AuthService.require_permission(db, tid, MANAGE_ROLES)
+            role = PermissionService.create_role(db, name, code, actor)
+            role_label = f"{role.name_ar} ({role.code})"
+        await state.clear()
+        await message.answer(
+            f"✅ تم إنشاء المنصب: {role_label}",
+            reply_markup=main_menu_keyboard(is_ceo=member_is_ceo(member)),
+        )
+    except (PermissionError, PermissionErrorDenied) as exc:
+        await message.answer(str(exc))
+    except Exception as exc:
+        await message.answer(f"تعذر إنشاء المنصب: {exc}")
 
 
 @router.callback_query(F.data.startswith("rtr:"))

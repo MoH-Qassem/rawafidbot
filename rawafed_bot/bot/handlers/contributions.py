@@ -18,7 +18,12 @@ from rawafed_bot.bot.keyboards.common import (
     obligations_inline,
     skip_inline,
 )
-from rawafed_bot.bot.keyboards.main_menu import BTN_CONTRIB, main_menu_keyboard, texts_for
+from rawafed_bot.bot.keyboards.main_menu import (
+    BTN_CONTRIB,
+    BTN_CONTRIB_CREATE,
+    main_menu_keyboard,
+    texts_for,
+)
 from rawafed_bot.bot.states import ContributionStates
 from rawafed_bot.database.connection import get_db_context
 from rawafed_bot.database.models.contribution import ContributionObligation
@@ -37,10 +42,11 @@ router = Router(name="contributions")
 @router.message(F.text.in_(texts_for(BTN_CONTRIB)))
 async def contrib_entry(message: Message, state: FSMContext, member: Member):
     from rawafed_bot.bot.helpers_permissions import ensure_perm
+    from rawafed_bot.bot.member_ref import member_is_ceo
     from rawafed_bot.services.permissions_catalog import PAY_CONTRIBUTION
+    await state.clear()
     if not await ensure_perm(message, member, PAY_CONTRIBUTION):
         return
-    await state.clear()
     await state.set_state(ContributionStates.menu)
     can_create = False
     with get_db_context() as db:
@@ -48,13 +54,37 @@ async def contrib_entry(message: Message, state: FSMContext, member: Member):
         from rawafed_bot.services.permissions_catalog import CREATE_CONTRIBUTION
         m = db.query(Member).filter_by(id=member.id).first()
         can_create = bool(m and PermissionService.has_permission(db, m, CREATE_CONTRIBUTION))
-    await message.answer("طلبات المساهمات", reply_markup=cancel_only_keyboard())
+    await message.answer(
+        "طلبات المساهمات",
+        reply_markup=main_menu_keyboard(is_ceo=member_is_ceo(member)),
+    )
     await message.answer("اختر إجراءً:", reply_markup=contrib_menu_inline(can_create))
 
 
-@router.callback_query(ContributionStates.menu, F.data.startswith(f"{CONTRIB}:"))
+@router.message(F.text.in_(texts_for(BTN_CONTRIB_CREATE)))
+async def contrib_create_entry(message: Message, state: FSMContext, member: Member):
+    """Direct CEO shortcut: إضافة طلب مساهمة."""
+    from rawafed_bot.bot.helpers_permissions import ensure_perm
+    from rawafed_bot.services.permissions_catalog import CREATE_CONTRIBUTION
+
+    await state.clear()
+    if not await ensure_perm(message, member, CREATE_CONTRIBUTION):
+        return
+    with get_db_context() as db:
+        currencies = QueryService.get_currencies(db)
+    await state.set_state(ContributionStates.choosing_currency)
+    await message.answer(
+        "إنشاء طلب مساهمة — اختر العملة:",
+        reply_markup=currencies_inline(currencies),
+    )
+
+
+@router.callback_query(F.data.startswith(f"{CONTRIB}:"))
 async def contrib_menu_action(callback: CallbackQuery, state: FSMContext, member: Member):
     action = unpack(callback.data)[1]
+    # Revive menu state if user tapped a stale inline button
+    if action in {"list", "create", "pay"}:
+        await state.set_state(ContributionStates.menu)
 
     if action == "list":
         with get_db_context() as db:

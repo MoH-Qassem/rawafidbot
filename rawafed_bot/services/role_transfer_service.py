@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from rawafed_bot.core.config import settings
 from rawafed_bot.database.models.audit_log import AuditLog
 from rawafed_bot.database.models.member import Member
-from rawafed_bot.database.models.role import MemberRole, Role
+from rawafed_bot.database.models.role import MemberRole, Permission, Role, RolePermission
 from rawafed_bot.database.models.role_transfer import RoleTransferRequest
 from rawafed_bot.services.permission_service import PermissionErrorDenied, PermissionService
 
@@ -53,6 +53,27 @@ class RoleTransferService:
             if role:
                 role.is_unique = unique
                 db.add(role)
+        # ops_manager / staff must have usable defaults (otherwise menu buttons look dead)
+        from rawafed_bot.services.permissions_catalog import MEMBER_DEFAULT_PERMISSIONS
+        perms = {p.code: p for p in db.query(Permission).all()}
+        for role_code in ("ops_manager", "staff"):
+            role = db.query(Role).filter_by(code=role_code).first()
+            if not role:
+                continue
+            for pcode in MEMBER_DEFAULT_PERMISSIONS:
+                perm = perms.get(pcode)
+                if not perm:
+                    continue
+                row = db.query(RolePermission).filter_by(
+                    role_id=role.id, permission_id=perm.id
+                ).first()
+                if not row:
+                    db.add(RolePermission(
+                        role_id=role.id, permission_id=perm.id, is_granted=True
+                    ))
+                elif not row.is_granted:
+                    row.is_granted = True
+                    db.add(row)
         db.commit()
 
     @staticmethod

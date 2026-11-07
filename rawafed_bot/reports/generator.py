@@ -19,7 +19,7 @@ TYPE_LABELS = {
     "deposit": "إيداع",
     "expense": "مصروف",
     "withdrawal": "سحب",
-    "personal_expense": "مصروف على العضو",
+    "personal_expense": "مصروف من جيب العضو",
     "debt_repayment": "تحصيل دين",
     "advance_issued": "عهدة",
     "advance_settlement": "تسوية عهدة",

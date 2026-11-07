@@ -59,7 +59,7 @@ def _msg(uid=111111111, chat_type="private", chat_id=None):
 
 class TestMenuContract:
     def test_menu_version_and_build_bound(self):
-        assert MENU_VERSION.startswith("menu-v4")
+        assert MENU_VERSION.startswith("menu-v5")
         assert BUILD_ID.startswith("2.1.0+")
         assert START_HANDLER.endswith("start.cmd_start")
 

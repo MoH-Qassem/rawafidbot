@@ -43,20 +43,25 @@ class TestCurrencyIsolationAudit:
 
 
 class TestDebtAudit:
-    def test_personal_expense_partial_repayments(self, db):
+    def test_seeded_debt_partial_repayments(self, db):
+        from rawafed_bot.tests._debt_seed import seed_member_debt
+
         seed_all(db)
         ahmad = members(db)[0]
         cur = currency_by_code(db, "USD")
         OperationService.record_deposit(
             db, m(500, "USD", db), cur.id, ahmad.id, "fund", ahmad.id, "d-fund"
         )
-        OperationService.record_personal_expense(
+        # Record company expense that is also tracked as member debt
+        pe = OperationService.record_expense_from_box(
             db, m(100, "USD", db), cur.id, cat_id(db), ahmad.id, "pers", ahmad.id, "d-pe"
         )
-        debt = db.query(MemberDebt).filter_by(member_id=ahmad.id).one()
+        debt = seed_member_debt(db, ahmad.id, cur.id, m(100, "USD", db), "d-debt-seed")
+        debt.transaction_id = pe.id
+        db.add(debt)
+        db.commit()
         assert debt.remaining == m(100, "USD", db)
         assert expense_acc(db, "USD").balance == m(100, "USD", db)
-        # deposit 500 − personal 100 = 400
         assert cash(db, "USD").balance == m(400, "USD", db)
 
         OperationService.record_debt_repayment(
@@ -67,25 +72,17 @@ class TestDebtAudit:
         )
         db.refresh(debt)
         assert debt.remaining == m(50, "USD", db)
-        # repayments return cash to the box
         assert cash(db, "USD").balance == m(450, "USD", db)
-        # net expense after recovery
         assert expense_acc(db, "USD").balance == m(50, "USD", db)
-        expense_txs = db.query(Transaction).filter(
-            Transaction.transaction_type.in_(["expense", "personal_expense"]),
-            Transaction.status == "active",
-        ).count()
-        assert expense_txs == 1
 
     def test_overpay_and_full_repay_and_reverse_repay(self, db):
+        from rawafed_bot.tests._debt_seed import seed_member_debt
+
         seed_all(db)
         mem = members(db)[0]
         cur = currency_by_code(db, "USD")
         OperationService.record_deposit(db, m(200, "USD", db), cur.id, mem.id, "d", mem.id, "dr-d")
-        OperationService.record_personal_expense(
-            db, m(80, "USD", db), cur.id, cat_id(db), mem.id, "p", mem.id, "dr-p"
-        )
-        debt = db.query(MemberDebt).one()
+        debt = seed_member_debt(db, mem.id, cur.id, m(80, "USD", db), "dr-debt")
         with pytest.raises(OperationError):
             OperationService.record_debt_repayment(
                 db, m(81, "USD", db), cur.id, mem.id, "bad", mem.id, debt.id, "dr-bad"
@@ -102,15 +99,20 @@ class TestDebtAudit:
         assert debt.status == "active"
         assert_stored_balances_match_ledger(db)
 
-    def test_cannot_reverse_personal_expense_after_partial_repay(self, db):
+    def test_cannot_reverse_expense_after_partial_repay_on_linked_debt(self, db):
+        from rawafed_bot.tests._debt_seed import seed_member_debt
+
         seed_all(db)
         mem = members(db)[0]
         cur = currency_by_code(db, "USD")
         OperationService.record_deposit(db, m(100, "USD", db), cur.id, mem.id, "d", mem.id, "cr-d")
-        pe = OperationService.record_personal_expense(
+        pe = OperationService.record_expense_from_box(
             db, m(50, "USD", db), cur.id, cat_id(db), mem.id, "p", mem.id, "cr-p"
         )
-        debt = db.query(MemberDebt).one()
+        debt = seed_member_debt(db, mem.id, cur.id, m(50, "USD", db), "cr-debt")
+        debt.transaction_id = pe.id
+        db.add(debt)
+        db.commit()
         OperationService.record_debt_repayment(
             db, m(10, "USD", db), cur.id, mem.id, "r", mem.id, debt.id, "cr-r"
         )

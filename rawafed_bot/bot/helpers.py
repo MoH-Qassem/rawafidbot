@@ -3,10 +3,15 @@ from __future__ import annotations
 
 from typing import Optional
 
+from aiogram.dispatcher.event.bases import UNHANDLED
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from rawafed_bot.bot.keyboards.main_menu import all_ceo_buttons, all_member_buttons
+from rawafed_bot.bot.keyboards.main_menu import (
+    all_ceo_buttons,
+    all_member_buttons,
+    texts_for,
+)
 from rawafed_bot.database.models.currency import Currency
 from rawafed_bot.database.models.transaction import TransactionType
 from rawafed_bot.utils.idempotency import generate_idempotency_key, generate_uuid
@@ -14,13 +19,33 @@ from rawafed_bot.utils.money import format_amount
 
 CANCEL_TEXTS = {"إلغاء", "/cancel", "الغاء", "cancel"}
 BACK_TEXTS = {"رجوع", "⬅️ رجوع", "back"}
-MAIN_MENU_TEXTS = set(all_member_buttons()) | set(all_ceo_buttons())
+
+
+def all_menu_texts() -> set[str]:
+    """Canonical + legacy labels so FSM collectors never swallow menu taps."""
+    out: set[str] = set()
+    for btn in all_ceo_buttons():
+        out |= texts_for(btn)
+    out |= {"📦 العهد المالية", "العهد المالية", "➕ طلب مساهمة", "➕ إضافة طلب مساهمة"}
+    return out
+
+
+MAIN_MENU_TEXTS = all_menu_texts()
+
+
+async def release_if_menu_button(message: Message, state: FSMContext):
+    """Clear FSM and return UNHANDLED when the user taps a main-menu button mid-flow."""
+    text = (message.text or "").strip()
+    if text not in MAIN_MENU_TEXTS and text not in all_menu_texts():
+        return None
+    await state.clear()
+    return UNHANDLED
 
 TX_TYPE_AR = {
     TransactionType.DEPOSIT.value: "إيداع",
     TransactionType.EXPENSE.value: "مصروف",
     TransactionType.WITHDRAWAL.value: "سحب",
-    TransactionType.PERSONAL_EXPENSE.value: "مصروف شخصي",
+    TransactionType.PERSONAL_EXPENSE.value: "مصروف من جيب العضو",
     TransactionType.DEBT_REPAYMENT.value: "تسديد دين",
     TransactionType.ADVANCE_ISSUED.value: "عهدة",
     TransactionType.ADVANCE_SETTLEMENT.value: "تسوية عهدة",

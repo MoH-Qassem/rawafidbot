@@ -24,7 +24,15 @@ class Member(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     def get_display_name(self) -> str:
-        name = self.display_name or self.telegram_full_name or f"عضو {self.telegram_id}"
-        if self.job_title:
-            return f"{name} ({self.job_title})"
-        return name
+        """Visible name only — job_title is shown separately (avoids «اسم (لقب) (منصب)»)."""
+        return self.display_name or self.telegram_full_name or f"عضو {self.telegram_id}"
+
+    def get_label_with_title(self) -> str:
+        name = self.get_display_name()
+        title = (self.job_title or "").strip()
+        if not title:
+            return name
+        # Don't double-wrap if title already embedded
+        if title in name:
+            return name
+        return f"{name} — {title}"

@@ -33,26 +33,31 @@ class TestOperations:
         db.refresh(cash_box)
         assert cash_box.balance == 800
 
-    def test_personal_expense_hits_cash_and_creates_debt(self, db):
+    def test_personal_expense_from_pocket_credits_member_due(self, db):
         seed_all(db)
         member = db.query(Account).filter_by(account_type="member_equity").first().member
         currency_id = db.query(Account).filter_by(account_type="cash_box").first().currency_id
         cash_box = db.query(Account).filter_by(account_type="cash_box", currency_id=currency_id).first()
+        due = db.query(Account).filter_by(
+            account_type="member_due", currency_id=currency_id, member_id=member.id
+        ).first()
         OperationService.record_deposit(
             db=db, amount=100, currency_id=currency_id, member_id=member.id,
             description="dep", created_by=member.id,
         )
+        before_cash = cash_box.balance
         tx = OperationService.record_personal_expense(
             db=db, amount=50, currency_id=currency_id, category_id=1,
             member_id=member.id, description="personal", created_by=member.id,
         )
         db.refresh(cash_box)
-        assert cash_box.balance == 50
-        debt = db.query(MemberDebt).filter_by(transaction_id=tx.id).first()
-        assert debt is not None
-        assert debt.remaining == 50
+        db.refresh(due)
+        # Pocket spend does not touch cash; company becomes liable to member
+        assert cash_box.balance == before_cash
+        assert due.balance == -50
+        assert db.query(MemberDebt).filter_by(transaction_id=tx.id).first() is None
 
-    def test_personal_expense_allows_negative_cash(self, db):
+    def test_personal_expense_does_not_require_cash(self, db):
         seed_all(db)
         member = db.query(Account).filter_by(account_type="member_equity").first().member
         currency_id = db.query(Account).filter_by(account_type="cash_box").first().currency_id
@@ -62,7 +67,7 @@ class TestOperations:
             member_id=member.id, description="over", created_by=member.id,
         )
         db.refresh(cash_box)
-        assert cash_box.balance == -75
+        assert cash_box.balance == 0
 
     def test_debt_repayment_reduces_debt_and_restores_cash(self, db):
         seed_all(db)
@@ -73,11 +78,22 @@ class TestOperations:
             db=db, amount=1000, currency_id=currency_id, member_id=member.id,
             description="dep", created_by=member.id,
         )
-        tx = OperationService.record_personal_expense(
-            db=db, amount=50, currency_id=currency_id, category_id=1,
-            member_id=member.id, description="personal", created_by=member.id,
+        # Seed an explicit member→company debt (not pocket expense)
+        from rawafed_bot.database.models.transaction import Transaction, TransactionType
+        tx = Transaction(
+            transaction_type=TransactionType.EXPENSE.value,
+            amount=50, currency_id=currency_id, member_id=member.id,
+            description="seed debt", created_by=member.id, idempotency_key="seed-debt-1",
         )
-        debt = db.query(MemberDebt).filter_by(transaction_id=tx.id).first()
+        db.add(tx)
+        db.flush()
+        debt = MemberDebt(
+            member_id=member.id, currency_id=currency_id,
+            amount=50, remaining=50, description="seed",
+            transaction_id=tx.id, status="active",
+        )
+        db.add(debt)
+        db.commit()
         OperationService.record_debt_repayment(
             db=db, amount=20, currency_id=currency_id, member_id=member.id,
             description="repay", created_by=member.id, debt_id=debt.id,
@@ -85,7 +101,7 @@ class TestOperations:
         db.refresh(debt)
         db.refresh(cash_box)
         assert debt.remaining == 30
-        assert cash_box.balance == 970
+        assert cash_box.balance == 1020
 
     def test_advance_withdrawal_not_expense(self, db):
         seed_all(db)

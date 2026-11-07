@@ -107,7 +107,7 @@ class TestExpenseAudit:
         assert expense_acc(db, "USD").balance == m(500, "USD", db)
         assert_stored_balances_match_ledger(db)
 
-    def test_personal_expense_hits_cash_and_creates_member_debt(self, db):
+    def test_personal_expense_from_pocket_credits_member_due(self, db):
         seed_all(db)
         mem = members(db)[0]
         cur = currency_by_code(db, "USD")
@@ -115,10 +115,13 @@ class TestExpenseAudit:
         OperationService.record_personal_expense(
             db, m(25, "USD", db), cur.id, cat_id(db), mem.id, "pers", mem.id, "pe-1"
         )
-        assert cash(db, "USD").balance == m(75, "USD", db)
-        from rawafed_bot.database.models.debt import MemberDebt
-        debt = db.query(MemberDebt).filter_by(member_id=mem.id).one()
-        assert debt.remaining == m(25, "USD", db)
+        # Cash untouched; company owes member
+        assert cash(db, "USD").balance == m(100, "USD", db)
+        from rawafed_bot.database.models.account import Account
+        due = db.query(Account).filter_by(
+            account_type="member_due", currency_id=cur.id, member_id=mem.id
+        ).one()
+        assert due.balance == -m(25, "USD", db)
 
     def test_expense_over_cash_allowed_negative_balance(self, db):
         seed_all(db)

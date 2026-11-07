@@ -177,31 +177,23 @@ class TestMoneyFlowsEndToEnd:
         session.refresh(cash)
         assert cash.balance == 9_000
 
-        # Personal expense → debt + cash out
+        # Pocket expense → company owes member; cash untouched
         OperationService.record_personal_expense(
-            session, 500, usd.id, cat.id, ceo.id, "على العضو", ceo.id, "e2e-pe"
+            session, 500, usd.id, cat.id, ceo.id, "من الجيب", ceo.id, "e2e-pe"
         )
         session.refresh(cash)
-        debt = session.query(MemberDebt).filter_by(member_id=ceo.id, status="active").one()
-        assert cash.balance == 8_500
-        assert debt.remaining == 500
+        due = session.query(Account).filter_by(
+            account_type="member_due", currency_id=usd.id, member_id=ceo.id
+        ).one()
+        assert cash.balance == 9_000
+        assert due.balance == -500
 
         # Overdraft withdrawal allowed
         OperationService.record_withdrawal(
             session, 9_000, usd.id, ceo.id, "سحب زائد", ceo.id, "e2e-wd"
         )
         session.refresh(cash)
-        assert cash.balance == -500
-
-        # Debt repayment restores cash
-        OperationService.record_debt_repayment(
-            session, 500, usd.id, ceo.id, "تحصيل", ceo.id, debt.id, "e2e-repay"
-        )
-        session.refresh(cash)
-        session.refresh(debt)
         assert cash.balance == 0
-        assert debt.remaining == 0
-        assert debt.status == "repaid"
         session.close()
 
     def test_deposit_fsm_confirm(self, full_db):
@@ -269,8 +261,13 @@ class TestMoneyFlowsEndToEnd:
 
         session = full_db()
         cash = session.query(Account).filter_by(account_type="cash_box", currency_id=usd_id).one()
-        assert cash.balance == 50_000 - 10_000 - 5_000
-        assert session.query(MemberDebt).filter_by(status="active").count() == 1
+        due = session.query(Account).filter_by(
+            account_type="member_due", currency_id=usd_id, member_id=ceo.id
+        ).one()
+        # Only box mode (100.00) hits cash; pocket (50.00) credits member_due
+        assert cash.balance == 50_000 - 10_000
+        assert due.balance == -5_000
+        assert session.query(MemberDebt).filter_by(status="active").count() == 0
         session.close()
 
 

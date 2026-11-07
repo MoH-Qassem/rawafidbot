@@ -44,6 +44,10 @@ async def choose_currency(callback: CallbackQuery, state: FSMContext):
 
 @router.message(DepositStates.entering_amount)
 async def enter_amount(message: Message, state: FSMContext):
+    from rawafed_bot.bot.helpers import release_if_menu_button
+    released = await release_if_menu_button(message, state)
+    if released is not None:
+        return released
     if await handle_cancel(message, state):
         return
     data = await state.get_data()

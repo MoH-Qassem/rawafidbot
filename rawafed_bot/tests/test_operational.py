@@ -203,13 +203,13 @@ class TestTenButtonsAndFSM:
             (mm.BTN_DEPOSIT, deposit.start_deposit, True),
             (mm.BTN_WITHDRAW, withdrawal.start_withdrawal, True),
             (mm.BTN_DEBTS, debts.show_debts, True),
-            (mm.BTN_MEMBERS, members.show_members, False),
+            (mm.BTN_MEMBERS, members.show_members, True),
             (mm.BTN_HISTORY, history.show_history, False),
             (mm.BTN_REPORT, reports.report_financial, True),
             (mm.BTN_CONTRIB, contributions.contrib_entry, True),
             (mm.BTN_SETTINGS, settings.settings_entry, True),
         ]
-        # Keep core 10 financial/settings entry points covered
+        # Keep core financial/settings entry points covered
         results = {}
         for label, handler, needs_state in starters:
             msg = _message(label)

@@ -176,7 +176,7 @@ class OperationService:
         member_id: int, description: str, created_by: int,
         idempotency_key: str = None,
     ) -> Transaction:
-        """مصروف على سجل العضو: يُصرف من الصندوق ويُسجَّل ديناً عليه لصالح الشركة."""
+        """مصروف من جيب العضو: لا يخرج من الصندوق، ويُسجَّل أن الشركة مدينة للعضو."""
         try:
             from rawafed_bot.services.permissions_catalog import RECORD_EXPENSE
             if amount <= 0:
@@ -184,35 +184,40 @@ class OperationService:
             OperationService._require_actor_permission(db, created_by, RECORD_EXPENSE)
             OperationService._ensure_member(db, member_id)
             expense = AccountingEngine.get_account(db, "expense_summary", currency_id)
-            cash_box = AccountingEngine.get_account(db, "cash_box", currency_id)
-            if not expense or not cash_box:
-                raise OperationError("الحسابات المحاسبية غير موجودة لهذه العملة.")
+            member_due = AccountingEngine.get_account(
+                db, "member_due", currency_id, member_id
+            )
+            if not expense or not member_due:
+                raise OperationError("الحسابات المحاسبية غير موجودة لهذه العملة/العضو.")
             if not idempotency_key:
                 idempotency_key = generate_idempotency_key(
-                    "personal_exp", str(member_id), str(currency_id), str(amount), description
+                    "pocket_exp", str(member_id), str(currency_id), str(amount), description
                 )
             OperationService._reject_duplicate_key(db, idempotency_key)
+            note = (description or "").strip()
+            if "جيب" not in note and "مدين" not in note:
+                note = f"{note} — من جيب العضو (الشركة مدينة له)".strip(" —")
             tx = Transaction(
                 transaction_type=TransactionType.PERSONAL_EXPENSE.value,
                 amount=amount, currency_id=currency_id, member_id=member_id,
-                category_id=category_id, description=description,
+                category_id=category_id, description=note,
                 created_by=created_by, idempotency_key=idempotency_key,
             )
             db.add(tx)
             db.flush()
-            debt = MemberDebt(
-                member_id=member_id, currency_id=currency_id,
-                amount=amount, remaining=amount,
-                description=description, transaction_id=tx.id,
-                status="active",
-            )
-            db.add(debt)
+            # Debit expense / credit member_due (liability: company owes the member)
             lines = [
-                JournalLineData(expense.id, debit=amount, credit=0, description="مصروف على حساب العضو"),
-                JournalLineData(cash_box.id, debit=0, credit=amount, description="صرف من الصندوق — دين على العضو"),
+                JournalLineData(
+                    expense.id, debit=amount, credit=0,
+                    description="مصروف دُفع من جيب العضو",
+                ),
+                JournalLineData(
+                    member_due.id, debit=0, credit=amount,
+                    description="مستحق للعضو على الشركة",
+                ),
             ]
             AccountingEngine.create_journal_entry(
-                db=db, currency_id=currency_id, description=description,
+                db=db, currency_id=currency_id, description=note,
                 created_by=created_by, lines=lines, transaction_id=tx.id,
                 idempotency_key=idempotency_key,
             )
@@ -493,12 +498,11 @@ class OperationService:
             OperationService._reject_duplicate_key(db, idempotency_key)
 
             # Side-effect guards before posting the reversing journal
-            if tx.transaction_type == TransactionType.PERSONAL_EXPENSE.value:
-                debt = db.query(MemberDebt).filter_by(transaction_id=tx.id).first()
-                if debt and debt.remaining != debt.amount:
-                    raise OperationError(
-                        "لا يمكن إلغاء مصروف شخصي بعد تسديد جزء من الدين المرتبط به."
-                    )
+            linked_debt = db.query(MemberDebt).filter_by(transaction_id=tx.id).first()
+            if linked_debt and linked_debt.remaining != linked_debt.amount:
+                raise OperationError(
+                    "لا يمكن إلغاء العملية بعد تسديد جزء من الدين المرتبط بها."
+                )
 
             AccountingEngine.reverse_journal_entry(
                 db=db, journal_entry_id=entry.id, reason=reason,

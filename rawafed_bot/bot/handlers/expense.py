@@ -61,6 +61,10 @@ async def choose_currency(callback: CallbackQuery, state: FSMContext):
 
 @router.message(ExpenseStates.entering_amount)
 async def enter_amount(message: Message, state: FSMContext):
+    from rawafed_bot.bot.helpers import release_if_menu_button
+    released = await release_if_menu_button(message, state)
+    if released is not None:
+        return released
     if await handle_cancel(message, state):
         return
     data = await state.get_data()
@@ -90,6 +94,10 @@ async def choose_category(callback: CallbackQuery, state: FSMContext):
 
 @router.message(ExpenseStates.entering_description)
 async def enter_description(message: Message, state: FSMContext):
+    from rawafed_bot.bot.helpers import release_if_menu_button
+    released = await release_if_menu_button(message, state)
+    if released is not None:
+        return released
     if await handle_cancel(message, state):
         return
     desc = (message.text or "").strip()
@@ -103,9 +111,9 @@ async def enter_description(message: Message, state: FSMContext):
         currency = db.query(Currency).filter_by(id=data["currency_id"]).first()
         cat = db.query(ExpenseCategory).filter_by(id=data["category_id"]).first()
     if data["mode"] == "box":
-        mode_ar = "من الصندوق (شركة — بدون دين)"
+        mode_ar = "من الصندوق"
     else:
-        mode_ar = "على سجل العضو (يُصرف من الصندوق + دين عليه)"
+        mode_ar = "من جيب العضو — الشركة مدينة للعضو بهذا المبلغ"
     summary = (
         "✅ تأكيد تسجيل المصروف\n"
         "━━━━━━━━━━━━\n"

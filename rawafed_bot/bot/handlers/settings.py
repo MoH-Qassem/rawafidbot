@@ -52,8 +52,10 @@ async def settings_entry(message: Message, state: FSMContext, member: Member):
     )
 
 
-@router.callback_query(SettingsStates.menu, F.data.startswith(f"{SETTINGS}:"))
+@router.callback_query(F.data.startswith(f"{SETTINGS}:"))
 async def settings_action(callback: CallbackQuery, state: FSMContext, member: Member):
+    # Not state-gated: stale inline buttons after /start must still work
+    await state.set_state(SettingsStates.menu)
     action = unpack(callback.data)[1]
 
     if action == "profile":
@@ -141,7 +143,13 @@ async def settings_action(callback: CallbackQuery, state: FSMContext, member: Me
 
 @router.message(SettingsStates.editing_name)
 async def edit_name(message: Message, state: FSMContext, member: Member):
-    if await handle_cancel(message, state):
+    from rawafed_bot.bot.helpers import release_if_menu_button
+    from rawafed_bot.bot.member_ref import member_is_ceo
+
+    released = await release_if_menu_button(message, state)
+    if released is not None:
+        return released
+    if await handle_cancel(message, state, member):
         return
     name = (message.text or "").strip()
     try:
@@ -154,13 +162,19 @@ async def edit_name(message: Message, state: FSMContext, member: Member):
     await state.clear()
     await message.answer(
         f"✅ تم تحديث الاسم إلى: {display}",
-        reply_markup=main_menu_keyboard(is_ceo=member.is_ceo),
+        reply_markup=main_menu_keyboard(is_ceo=member_is_ceo(member)),
     )
 
 
 @router.message(SettingsStates.editing_title)
 async def edit_title(message: Message, state: FSMContext, member: Member):
-    if await handle_cancel(message, state):
+    from rawafed_bot.bot.helpers import release_if_menu_button
+    from rawafed_bot.bot.member_ref import member_is_ceo
+
+    released = await release_if_menu_button(message, state)
+    if released is not None:
+        return released
+    if await handle_cancel(message, state, member):
         return
     title = (message.text or "").strip()
     if title in {"-", "مسح"}:
@@ -175,5 +189,5 @@ async def edit_title(message: Message, state: FSMContext, member: Member):
     await state.clear()
     await message.answer(
         f"✅ تم تحديث المسمى إلى: {display}",
-        reply_markup=main_menu_keyboard(is_ceo=member.is_ceo),
+        reply_markup=main_menu_keyboard(is_ceo=member_is_ceo(member)),
     )

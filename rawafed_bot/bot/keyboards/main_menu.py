@@ -14,6 +14,7 @@ BTN_HISTORY = "📒 سجل العمليات"
 
 BTN_MEMBERS = "👥 حسابات الأعضاء"
 BTN_CONTRIB = "🤝 طلبات المساهمات"
+BTN_CONTRIB_CREATE = "➕ طلب مساهمة"
 BTN_DEBTS = "💸 الديون والمستحقات"
 # Deprecated label kept so old Telegram keyboards still get a polite reply
 BTN_ADVANCES = "📦 العهد المالية"
@@ -35,6 +36,7 @@ LEGACY = {
     BTN_HISTORY: {"📋 سجل العمليات", "سجل العمليات"},
     BTN_DEBTS: {"📒 الديون والمستحقات", "الديون والمستحقات"},
     BTN_CONTRIB: {"🤝 المساهمات والعهد", "طلبات المساهمات", "المساهمات والعهد", "🤝 طلبات المساهمات"},
+    BTN_CONTRIB_CREATE: {"➕ إضافة طلب مساهمة", "إضافة طلب مساهمة", "إنشاء طلب مساهمة"},
     BTN_REPORT: {"📊 التقارير المالية", "التقارير المالية"},
     BTN_EXPORT: {"📁 تصدير Excel", "تصدير Excel"},
     BTN_ROLES: {"🏢 المناصب والصلاحيات", "إدارة المناصب", "صلاحيات الأعضاء"},
@@ -67,7 +69,9 @@ def all_member_buttons() -> list[str]:
 
 def all_ceo_buttons() -> list[str]:
     buttons = all_member_buttons()
-    # Insert roles before settings block end — after profile/settings section
+    # Contribution create + roles for CEO
+    idx = buttons.index(BTN_CONTRIB)
+    buttons = buttons[: idx + 1] + [BTN_CONTRIB_CREATE] + buttons[idx + 1 :]
     idx = buttons.index(BTN_SETTINGS)
     return buttons[:idx] + [BTN_ROLES] + buttons[idx:]
 
@@ -83,13 +87,18 @@ def main_menu_keyboard(is_ceo: bool = False, can_roles: bool = None) -> ReplyKey
         [KeyboardButton(text=BTN_HISTORY)],
         # 2) الحسابات والالتزامات
         [KeyboardButton(text=BTN_MEMBERS), KeyboardButton(text=BTN_CONTRIB)],
-        [KeyboardButton(text=BTN_DEBTS)],
-        # 3) التقارير
+    ]
+    if is_ceo:
+        rows.append([KeyboardButton(text=BTN_CONTRIB_CREATE), KeyboardButton(text=BTN_DEBTS)])
+    else:
+        rows.append([KeyboardButton(text=BTN_DEBTS)])
+    # 3) التقارير
+    rows.extend([
         [KeyboardButton(text=BTN_REPORT), KeyboardButton(text=BTN_MONTHLY)],
         [KeyboardButton(text=BTN_WEEKLY), KeyboardButton(text=BTN_EXPORT)],
         # 4) إدارة الشركة
         [KeyboardButton(text=BTN_MY_PROFILE), KeyboardButton(text=BTN_SETTINGS)],
-    ]
+    ])
     if can_roles:
         rows.append([KeyboardButton(text=BTN_ROLES)])
     # 5) المساعدة

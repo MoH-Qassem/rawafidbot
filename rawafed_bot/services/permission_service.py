@@ -205,13 +205,43 @@ class PermissionService:
         return row
 
     @staticmethod
+    def suggest_role_code(name_ar: str) -> str:
+        """Build a stable latin-ish code from a free-form title."""
+        import re
+        import unicodedata
+
+        raw = (name_ar or "").strip().lower()
+        # Keep latin/digits; map spaces to _
+        latin = re.sub(r"[^a-z0-9]+", "_", raw)
+        latin = latin.strip("_")
+        if not latin or len(latin) < 2:
+            # Fallback from unicode codepoints so Arabic titles still get a code
+            digest = "".join(
+                f"{ord(ch):x}" for ch in unicodedata.normalize("NFKC", name_ar or "role")[:8]
+            )
+            latin = f"role_{digest[:12]}"
+        return latin[:40]
+
+    @staticmethod
     def create_role(db: Session, name_ar: str, code: str, actor: Member) -> Role:
         if not actor.is_ceo:
             raise PermissionErrorDenied("إنشاء المناصب متاح للـ CEO فقط.")
-        code = code.strip().lower().replace(" ", "_")
-        if db.query(Role).filter_by(code=code).first():
-            raise PermissionErrorDenied("رمز المنصب مستخدم مسبقاً.")
-        role = Role(code=code, name_ar=name_ar.strip(), is_system=False, is_active=True)
+        name = (name_ar or "").strip()
+        if not name:
+            raise PermissionErrorDenied("اسم المنصب مطلوب.")
+        code = (code or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if not code:
+            code = PermissionService.suggest_role_code(name)
+        # Allow only safe code chars; otherwise auto-fix
+        import re
+        if not re.fullmatch(r"[a-z][a-z0-9_]{1,39}", code):
+            code = PermissionService.suggest_role_code(name)
+        base = code
+        n = 2
+        while db.query(Role).filter_by(code=code).first():
+            code = f"{base}_{n}"[:40]
+            n += 1
+        role = Role(code=code, name_ar=name, is_system=False, is_active=True)
         db.add(role)
         db.flush()
         # Start from member defaults

@@ -51,29 +51,31 @@ class TestIntegratedScenario:
         assert cash_box.balance == 900
         assert expense_acc.balance == 100
 
-        # 3. Personal expense 50 USD by member1 (from cash + debt on member)
-        tx_personal = OperationService.record_personal_expense(
+        # 3. Pocket expense 50 USD — cash untouched, company owes member
+        OperationService.record_personal_expense(
             db=db, amount=50, currency_id=usd_currency_id, category_id=1,
-            member_id=member1.id, description="مصروف شخصي", created_by=member1.id,
+            member_id=member1.id, description="مصروف من الجيب", created_by=member1.id,
         )
         db.refresh(cash_box)
         db.refresh(expense_acc)
-        assert cash_box.balance == 850
+        assert cash_box.balance == 900
         assert expense_acc.balance == 150
-        debt = db.query(MemberDebt).filter_by(transaction_id=tx_personal.id).first()
-        assert debt.remaining == 50
+        due = db.query(Account).filter_by(
+            account_type="member_due", currency_id=usd_currency_id, member_id=member1.id
+        ).first()
+        assert due.balance == -50
 
-        # 4. Debt repayment 20 USD (cash returns to box)
+        # 4. Seed member→company debt and partial repayment
+        from rawafed_bot.tests._debt_seed import seed_member_debt
+        debt = seed_member_debt(db, member1.id, usd_currency_id, 50, "int-debt")
         OperationService.record_debt_repayment(
             db=db, amount=20, currency_id=usd_currency_id, member_id=member1.id,
             description="تسديد جزئي", created_by=member1.id, debt_id=debt.id,
         )
         db.refresh(cash_box)
         db.refresh(debt)
-        db.refresh(expense_acc)
-        assert cash_box.balance == 870
+        assert cash_box.balance == 920
         assert debt.remaining == 30
-        assert expense_acc.balance == 130
 
         # 5. Advance withdrawal 200 USD to member2
         tx_adv, advance = OperationService.record_withdrawal_as_advance(
@@ -81,7 +83,7 @@ class TestIntegratedScenario:
             description="سحب عهدة", purpose="سفر", created_by=member2.id,
         )
         db.refresh(cash_box)
-        assert cash_box.balance == 670
+        assert cash_box.balance == 720
         assert advance.status == "open"
 
         # 6. Settle advance: 150 expense + 50 returned
@@ -92,7 +94,9 @@ class TestIntegratedScenario:
         db.refresh(cash_box)
         db.refresh(expense_acc)
         db.refresh(advance)
-        assert cash_box.balance == 720
+        # 720 cash after advance issue + 50 returned on settle
+        assert cash_box.balance == 770
+        # expenses: box100 + pocket50 + settle150 − repay20 = 280
         assert expense_acc.balance == 280
         assert advance.status == "fully_settled"
         assert settlement.additional_amount == 0
