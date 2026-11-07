@@ -29,18 +29,20 @@ async def show_debts(message: Message, state: FSMContext, member: Member):
     if not await ensure_perm(message, member, VIEW_DEBTS):
         return
     await state.clear()
+    from rawafed_bot.bot.member_ref import member_is_ceo
+    actor_is_ceo = member_is_ceo(member)
     with get_db_context() as db:
         text = ReportService.debts_report(db)
         debts = QueryService.active_debts(db)
         items = []
         for d in debts:
-            member = db.query(Member).filter_by(id=d.member_id).first()
+            debtor = db.query(Member).filter_by(id=d.member_id).first()
             currency = db.query(Currency).filter_by(id=d.currency_id).first()
             items.append((
                 d.id,
-                f"#{d.id} {member.get_display_name() if member else d.member_id} — {format_amount(d.remaining, currency)}",
+                f"#{d.id} {debtor.get_display_name() if debtor else d.member_id} — {format_amount(d.remaining, currency)}",
             ))
-    await message.answer(text, reply_markup=main_menu_keyboard(is_ceo=member.is_ceo))
+    await message.answer(text, reply_markup=main_menu_keyboard(is_ceo=actor_is_ceo))
     if items:
         await state.set_state(DebtStates.choosing_debt)
         await message.answer("لتسديد دين اختر من القائمة:", reply_markup=debts_inline(items))
@@ -130,5 +132,11 @@ async def confirm_repay(callback: CallbackQuery, state: FSMContext, member: Memb
         await state.clear()
         await callback.message.answer(
             str(exc), reply_markup=main_menu_keyboard(is_ceo=member.is_ceo)
+        )
+    except Exception as exc:
+        await state.clear()
+        await callback.message.answer(
+            str(exc) or "تعذر حفظ العملية.",
+            reply_markup=main_menu_keyboard(is_ceo=member.is_ceo),
         )
     await callback.answer()

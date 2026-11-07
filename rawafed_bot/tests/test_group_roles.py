@@ -96,7 +96,8 @@ class TestRegistration:
                 db, chat_id=-1002, title="X", ceo_telegram_id=222222222
             )
 
-    def test_incomplete_registration_blocks_ops_when_group_setup(self, db):
+    def test_ceo_can_operate_before_full_member_roster(self, db):
+        """CEO must be able to deposit/ops even if not all 5 seats are filled."""
         seed_all(db)
         for m in db.query(Member).filter(Member.is_ceo == False).all():
             m.is_active = False
@@ -107,10 +108,10 @@ class TestRegistration:
         )
         ceo = AuthService.require_ceo(db, settings.CEO_TELEGRAM_ID)
         usd = db.query(Currency).filter_by(code="USD").one()
-        with pytest.raises(OperationError):
-            OperationService.record_deposit(
-                db, 1000, usd.id, ceo.id, "blocked", ceo.id, "blocked-dep-1"
-            )
+        tx = OperationService.record_deposit(
+            db, 1000, usd.id, ceo.id, "ok-early", ceo.id, "early-dep-1"
+        )
+        assert tx.id is not None
 
 
 class TestRolesPermissions:

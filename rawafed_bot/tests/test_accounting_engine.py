@@ -79,7 +79,7 @@ class TestAccountingEngine:
             )
         assert "اختلاف العملات" in str(exc.value)
 
-    def test_cash_box_negative_rejected(self, db):
+    def test_cash_box_negative_allowed(self, db):
         seed_all(db)
         usd = db.query(Account).filter_by(account_type="cash_box").first()
         rev = db.query(Account).filter_by(account_type="revenue").first()
@@ -87,11 +87,12 @@ class TestAccountingEngine:
             JournalLineData(usd.id, debit=0, credit=100),
             JournalLineData(rev.id, debit=100, credit=0),
         ]
-        with pytest.raises(AccountingError) as exc:
-            AccountingEngine.create_journal_entry(
-                db=db, currency_id=usd.currency_id, description="neg", created_by=1, lines=lines
-            )
-        assert "سالب" in str(exc.value)
+        AccountingEngine.create_journal_entry(
+            db=db, currency_id=usd.currency_id, description="neg", created_by=1, lines=lines
+        )
+        db.commit()
+        db.refresh(usd)
+        assert usd.balance == -100
 
     def test_idempotency_prevents_duplicate(self, db):
         seed_all(db)

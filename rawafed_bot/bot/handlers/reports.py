@@ -24,7 +24,8 @@ router = Router(name="reports")
 
 
 def _menu_kb(member: Member):
-    return main_menu_keyboard(is_ceo=bool(member and member.is_ceo))
+    from rawafed_bot.bot.member_ref import member_is_ceo
+    return main_menu_keyboard(is_ceo=member_is_ceo(member))
 
 
 @router.message(F.text.in_(texts_for(BTN_REPORT)))

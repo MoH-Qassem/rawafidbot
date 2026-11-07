@@ -9,8 +9,16 @@ from rawafed_bot.services.permission_service import PermissionErrorDenied, Permi
 
 
 async def ensure_perm(message: Message, member: Member, code: str) -> bool:
+    # Read identity from instance dict to survive detached/expired members
+    raw = getattr(member, "__dict__", {}) or {}
+    mid = raw.get("id")
+    tid = raw.get("telegram_id")
     with get_db_context() as db:
-        m = db.query(Member).filter_by(id=member.id).first()
+        m = None
+        if mid is not None:
+            m = db.query(Member).filter_by(id=mid).first()
+        if m is None and tid is not None:
+            m = db.query(Member).filter_by(telegram_id=tid).first()
         if not m:
             await message.answer("⚠️ العضو غير موجود.")
             return False

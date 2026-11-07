@@ -73,17 +73,20 @@ async def cmd_start(message: Message, state: FSMContext, member: Member = None):
         )
         return
 
+    from rawafed_bot.bot.member_ref import member_ids, member_is_ceo
+
     can_roles = False
+    mid, _tid = member_ids(member)
     with get_db_context() as db:
         from rawafed_bot.services.permission_service import PermissionService
         from rawafed_bot.services.permissions_catalog import MANAGE_ROLES
 
-        m = db.query(Member).filter_by(id=member.id).first()
+        m = db.query(Member).filter_by(id=mid).first() if mid else None
         can_roles = bool(m and PermissionService.has_permission(db, m, MANAGE_ROLES))
 
     await message.answer(
         WELCOME_REGISTERED,
-        reply_markup=main_menu_keyboard(is_ceo=member.is_ceo, can_roles=can_roles),
+        reply_markup=main_menu_keyboard(is_ceo=member_is_ceo(member), can_roles=can_roles),
     )
 
 

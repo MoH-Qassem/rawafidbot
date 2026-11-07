@@ -263,10 +263,8 @@ async def _review_and_save_profile(message: Message, state: FSMContext, bot: Bot
                 await message.answer("سجّل أولاً عبر اختيار المسمى.")
                 return
             from rawafed_bot.services.registration_service import RegistrationService as RS
-            RS.complete_profile(db, mem.id, display_name=data.get("display_name"), job_title=mem.job_title)
-            if nick:
-                from rawafed_bot.services.member_service import MemberService
-                # keep job_title; append nick into display already done via complete_profile name
+            saved_name = display or data.get("display_name")
+            RS.complete_profile(db, mem.id, display_name=saved_name, job_title=mem.job_title)
             role = PermissionService.get_member_role(db, mem.id)
             summary = (
                 f"✅ تم حفظ ملفك داخل المجموعة.\n\n"

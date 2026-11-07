@@ -1,4 +1,7 @@
 """Financial Operations Service for Rawafed Bot."""
+from __future__ import annotations
+
+import threading
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +15,19 @@ from rawafed_bot.database.models.advance import Advance, AdvanceSettlement
 from rawafed_bot.database.models.debt import MemberDebt
 from rawafed_bot.database.models.contribution import ContributionObligation, ContributionRequest
 from rawafed_bot.utils.idempotency import generate_idempotency_key
+
+# Serialize finance writes in-process (SQLite + concurrent handler safety).
+_FINANCE_LOCK = threading.RLock()
+
+
+def _locked(fn):
+    def wrapper(*args, **kwargs):
+        with _FINANCE_LOCK:
+            return fn(*args, **kwargs)
+
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return staticmethod(wrapper)
 
 
 class OperationError(Exception):
@@ -29,23 +45,12 @@ class OperationService:
 
     @staticmethod
     def _require_actor_permission(db: Session, created_by: int, code: str) -> Member:
-        """Enforce role permissions + block production ops before full registration."""
-        from rawafed_bot.services.group_service import GroupService
+        """Enforce role permissions for an active registered member."""
         from rawafed_bot.services.permission_service import PermissionErrorDenied, PermissionService
-        from rawafed_bot.services.registration_service import RegistrationService
 
         actor = OperationService._ensure_member(db, created_by)
         if not actor.is_active:
             raise OperationError("حساب العضو غير نشط.")
-
-        group = GroupService.get_primary(db)
-        if group and group.is_setup_complete:
-            status = RegistrationService.registration_status(db)
-            if not status["complete"]:
-                raise OperationError(
-                    "⏳ لم يكتمل تسجيل أعضاء الشركة بعد. "
-                    "أكمل تسجيل الأعضاء المعتمدين قبل العمليات الإنتاجية."
-                )
 
         try:
             PermissionService.require(db, actor, code)
@@ -66,12 +71,19 @@ class OperationService:
 
     @staticmethod
     def _reraise_integrity(exc: Exception) -> None:
-        """Map unique-constraint races to a clear duplicate error."""
+        """Map DB/accounting failures to OperationError for clean handler UX."""
         if isinstance(exc, IntegrityError):
             raise OperationError("⚠️ هذه العملية تم تسجيلها مسبقاً. لا يمكن تكرارها.") from exc
-        raise exc
+        if isinstance(exc, AccountingError):
+            raise OperationError(str(exc)) from exc
+        if isinstance(exc, OperationError):
+            raise exc
+        # Keep auth/permission errors as-is for callers that catch PermissionError
+        if isinstance(exc, PermissionError):
+            raise exc
+        raise OperationError(str(exc) or "تعذر حفظ العملية.") from exc
 
-    @staticmethod
+    @_locked
     def record_deposit(
         db: Session, amount: int, currency_id: int, member_id: int,
         description: str, created_by: int, idempotency_key: str = None,
@@ -114,7 +126,7 @@ class OperationService:
             db.rollback()
             OperationService._reraise_integrity(exc)
 
-    @staticmethod
+    @_locked
     def record_expense_from_box(
         db: Session, amount: int, currency_id: int, category_id: int,
         member_id: int, description: str, created_by: int,
@@ -158,7 +170,7 @@ class OperationService:
             db.rollback()
             OperationService._reraise_integrity(exc)
 
-    @staticmethod
+    @_locked
     def record_personal_expense(
         db: Session, amount: int, currency_id: int, category_id: int,
         member_id: int, description: str, created_by: int,
@@ -210,7 +222,7 @@ class OperationService:
             db.rollback()
             OperationService._reraise_integrity(exc)
 
-    @staticmethod
+    @_locked
     def record_debt_repayment(
         db: Session, amount: int, currency_id: int, member_id: int,
         description: str, created_by: int, debt_id: int,
@@ -268,7 +280,7 @@ class OperationService:
             db.rollback()
             OperationService._reraise_integrity(exc)
 
-    @staticmethod
+    @_locked
     def record_withdrawal(
         db: Session, amount: int, currency_id: int, member_id: int,
         description: str, created_by: int, idempotency_key: str = None,
@@ -312,7 +324,7 @@ class OperationService:
             db.rollback()
             OperationService._reraise_integrity(exc)
 
-    @staticmethod
+    @_locked
     def record_withdrawal_as_advance(
         db: Session, amount: int, currency_id: int, member_id: int,
         description: str, purpose: str, created_by: int,
@@ -365,7 +377,7 @@ class OperationService:
             db.rollback()
             OperationService._reraise_integrity(exc)
 
-    @staticmethod
+    @_locked
     def settle_advance(
         db: Session, advance_id: int, expense_amount: int,
         returned_amount: int, description: str, created_by: int,
@@ -454,7 +466,7 @@ class OperationService:
             db.rollback()
             OperationService._reraise_integrity(exc)
 
-    @staticmethod
+    @_locked
     def reverse_transaction(
         db: Session, transaction_id: int, reason: str, created_by: int,
         idempotency_key: str = None,
