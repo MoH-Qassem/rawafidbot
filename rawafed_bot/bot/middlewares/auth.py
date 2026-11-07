@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Awaitable, Callable, Dict
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from rawafed_bot.database.connection import get_db_context
+from rawafed_bot.database.models.member import Member
 from rawafed_bot.services.auth_service import AuthService
 
 
@@ -38,6 +39,27 @@ def _is_public_event(event: TelegramObject) -> bool:
     return False
 
 
+def _detach_member(db, member: Optional[Member]) -> Optional[Member]:
+    """Expunge after eagerly reading scalar columns so handlers stay safe."""
+    if member is None:
+        return None
+    # Touch columns while still bound (avoid DetachedInstanceError later)
+    _ = (
+        member.id,
+        member.telegram_id,
+        member.is_active,
+        member.is_ceo,
+        member.display_name,
+        member.telegram_full_name,
+        member.telegram_username,
+        member.job_title,
+        member.nickname,
+        member.profile_completed,
+    )
+    db.expunge(member)
+    return member
+
+
 class AuthMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -56,18 +78,19 @@ class AuthMiddleware(BaseMiddleware):
             member = AuthService.get_member_by_telegram_id(db, user.id)
 
             if public:
+                member_active = bool(member and member.is_active)
                 if AuthService.is_ceo(user.id):
                     try:
                         member = AuthService.require_member(db, user.id)
                         from rawafed_bot.database.seeder import seed_accounts
                         seed_accounts(db)
-                        db.expunge(member)
-                        data["member"] = member
+                        data["member"] = _detach_member(db, member)
+                        member_active = bool(data["member"] and data["member"].is_active)
                     except PermissionError:
                         data["member"] = None
-                elif member and member.is_active:
-                    db.expunge(member)
-                    data["member"] = member
+                        member_active = False
+                elif member_active:
+                    data["member"] = _detach_member(db, member)
                 else:
                     data["member"] = None
 
@@ -75,7 +98,7 @@ class AuthMiddleware(BaseMiddleware):
                 if (
                     isinstance(event, Message)
                     and event.text
-                    and not (data.get("member") and data["member"].is_active)
+                    and not member_active
                 ):
                     from rawafed_bot.bot.keyboards.main_menu import (
                         BTN_GUIDE,
@@ -122,7 +145,6 @@ class AuthMiddleware(BaseMiddleware):
                 elif isinstance(event, CallbackQuery):
                     await event.answer(text, show_alert=True)
                 return None
-            db.expunge(member)
-            data["member"] = member
+            data["member"] = _detach_member(db, member)
 
         return await handler(event, data)
