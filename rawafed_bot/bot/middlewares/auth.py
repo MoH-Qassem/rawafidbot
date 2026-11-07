@@ -43,7 +43,7 @@ def _detach_member(db, member: Optional[Member]) -> Optional[Member]:
     """Expunge after eagerly reading scalar columns so handlers stay safe."""
     if member is None:
         return None
-    # Touch columns while still bound (avoid DetachedInstanceError later)
+    # Touch real Member columns while still bound (avoid DetachedInstanceError later)
     _ = (
         member.id,
         member.telegram_id,
@@ -53,8 +53,8 @@ def _detach_member(db, member: Optional[Member]) -> Optional[Member]:
         member.telegram_full_name,
         member.telegram_username,
         member.job_title,
-        member.nickname,
         member.profile_completed,
+        member.registered_via_group_id,
     )
     db.expunge(member)
     return member
