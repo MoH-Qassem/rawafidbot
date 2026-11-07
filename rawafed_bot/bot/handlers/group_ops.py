@@ -48,6 +48,34 @@ ASK_AR = {
     "op_type": "ما نوع العملية؟ (مصروف / إيداع / سحب)",
 }
 
+# Prefer currency before amount so amount_minor can be parsed on the next step
+_MISSING_ORDER = ("op_type", "currency", "amount", "category", "description")
+_CANCEL_WORDS = {"إلغاء", "الغاء", "cancel", "/cancel", "وقف", "توقف"}
+
+
+def _order_missing(fields: list) -> list:
+    rank = {name: i for i, name in enumerate(_MISSING_ORDER)}
+    return sorted(fields, key=lambda f: rank.get(f, 99))
+
+
+def _compute_missing(data: dict) -> list:
+    """Amount is complete once we have text; minor units wait for currency."""
+    missing: list = []
+    if not data.get("op_type"):
+        missing.append("op_type")
+    if not data.get("currency_id"):
+        missing.append("currency")
+    if not data.get("amount_text"):
+        missing.append("amount")
+    elif data.get("currency_id") and not data.get("amount_minor"):
+        # Text present but invalid for the chosen currency — re-ask amount
+        missing.append("amount")
+    if data.get("op_type") == "expense" and not data.get("category_id"):
+        missing.append("category")
+    if not data.get("description"):
+        missing.append("description")
+    return _order_missing(missing)
+
 
 def _confirm_kb(token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -118,6 +146,7 @@ async def start_group_operation(
             await state.clear()
             return
 
+    missing = _order_missing(list(missing))
     if missing:
         field = missing[0]
         await state.set_state(GroupOpStates.collecting)
@@ -151,16 +180,36 @@ async def _show_confirm(message: Message, state: FSMContext, member: Member, dat
     await message.reply(summary, reply_markup=_confirm_kb(data["token"]))
 
 
-def _apply_field(data: dict, field: str, value, db=None) -> list:
-    """Update data from collected answer; return remaining missing fields."""
+def _parse_amount_into(data: dict, db) -> Optional[str]:
+    """Parse amount_text into amount_minor when currency is known. Return error text or None."""
+    if not data.get("amount_text") or not data.get("currency_id") or db is None:
+        return None
+    cur = db.query(Currency).filter_by(id=data["currency_id"]).first()
+    if not cur:
+        data["amount_minor"] = None
+        return "العملة غير موجودة."
+    try:
+        data["amount_minor"] = parse_user_amount(data["amount_text"], cur)
+        return None
+    except MoneyError as exc:
+        data["amount_minor"] = None
+        return str(exc)
+
+
+def _apply_field(data: dict, field: str, value, db=None) -> tuple[list, Optional[str]]:
+    """Update data from collected answer; return (remaining missing fields, error msg)."""
+    err: Optional[str] = None
     if field == "amount":
-        data["amount_text"] = str(value).strip()
-        if data.get("currency_id") and db is not None:
-            cur = db.query(Currency).filter_by(id=data["currency_id"]).first()
-            try:
-                data["amount_minor"] = parse_user_amount(data["amount_text"], cur)
-            except MoneyError:
-                data["amount_minor"] = None
+        text = str(value).strip()
+        data["amount_text"] = text
+        data["amount_minor"] = None
+        if db is not None and not data.get("currency_id"):
+            # Allow "100 دولار" in one reply
+            cur = find_currency(db, text)
+            if cur:
+                data["currency_id"] = cur.id
+                data["currency_code"] = cur.code
+        err = _parse_amount_into(data, db)
     elif field == "currency":
         if isinstance(value, int):
             data["currency_id"] = value
@@ -173,12 +222,10 @@ def _apply_field(data: dict, field: str, value, db=None) -> list:
                 if cur:
                     data["currency_id"] = cur.id
                     data["currency_code"] = cur.code
-        if data.get("amount_text") and data.get("currency_id") and db is not None:
-            cur = db.query(Currency).filter_by(id=data["currency_id"]).first()
-            try:
-                data["amount_minor"] = parse_user_amount(data["amount_text"], cur)
-            except MoneyError:
-                data["amount_minor"] = None
+                else:
+                    err = "لم أتعرف على العملة. اختر من الأزرار أو اكتب: دولار / ليرة سورية / ليرة تركية"
+        if not err:
+            err = _parse_amount_into(data, db)
     elif field == "description":
         data["description"] = str(value).strip()[:200]
     elif field == "category":
@@ -197,18 +244,16 @@ def _apply_field(data: dict, field: str, value, db=None) -> list:
         raw = str(value)
         data["op_type"] = NLOperationParser.detect_type(raw) or data.get("op_type")
 
-    missing = []
-    if not data.get("op_type"):
-        missing.append("op_type")
-    if not data.get("amount_text") or not data.get("amount_minor"):
-        missing.append("amount")
-    if not data.get("currency_id"):
-        missing.append("currency")
-    if data.get("op_type") == "expense" and not data.get("category_id"):
-        missing.append("category")
-    if not data.get("description"):
-        missing.append("description")
-    return missing
+    return _compute_missing(data), err
+
+
+async def _ask_next(message: Message, mention: str, nxt: str):
+    if nxt == "currency":
+        await message.reply(f"{mention}\n{ASK_AR[nxt]}", reply_markup=_currencies_kb())
+    elif nxt == "category":
+        await message.reply(f"{mention}\n{ASK_AR[nxt]}", reply_markup=_categories_kb())
+    else:
+        await message.reply(f"{mention}\n{ASK_AR.get(nxt, 'أكمل:')}")
 
 
 @router.message(GroupOpStates.collecting, F.text)
@@ -219,22 +264,35 @@ async def collect_missing(message: Message, state: FSMContext, member: Member = 
     gop = data_all.get("gop") or {}
     if gop.get("owner_tg_id") and gop["owner_tg_id"] != message.from_user.id:
         return  # ignore other members' replies
+    mention = f'<a href="tg://user?id={message.from_user.id}">{message.from_user.full_name}</a>'
+    text = (message.text or "").strip()
+    if text.lower() in _CANCEL_WORDS or text in _CANCEL_WORDS:
+        await state.clear()
+        await message.reply(f"{mention}\nتم إلغاء العملية.")
+        return
     field = data_all.get("gop_ask")
     if not field:
         return
     with get_db_context() as db:
-        missing = _apply_field(gop, field, message.text, db)
+        missing, err = _apply_field(gop, field, message.text, db)
     await state.update_data(gop=gop, gop_missing=missing)
-    mention = f'<a href="tg://user?id={message.from_user.id}">{message.from_user.full_name}</a>'
+    if err and field == "amount":
+        # Invalid amount — stay on amount and explain
+        await state.update_data(gop_ask="amount")
+        await message.reply(f"{mention}\n{err}\n{ASK_AR['amount']}")
+        return
+    if err and field == "currency" and "currency" in missing:
+        await state.update_data(gop_ask="currency")
+        await message.reply(f"{mention}\n{err}", reply_markup=_currencies_kb())
+        return
     if missing:
         nxt = missing[0]
         await state.update_data(gop_ask=nxt)
-        if nxt == "currency":
-            await message.reply(f"{mention}\n{ASK_AR[nxt]}", reply_markup=_currencies_kb())
-        elif nxt == "category":
-            await message.reply(f"{mention}\n{ASK_AR[nxt]}", reply_markup=_categories_kb())
+        # If amount text was bad after currency was set, surface parse error
+        if nxt == "amount" and err:
+            await message.reply(f"{mention}\n{err}\n{ASK_AR['amount']}")
         else:
-            await message.reply(f"{mention}\n{ASK_AR.get(nxt, 'أكمل:')}")
+            await _ask_next(message, mention, nxt)
         return
     # done collecting
     mem = member
@@ -263,13 +321,15 @@ async def collect_via_button(callback: CallbackQuery, state: FSMContext, member:
     value = int(parts[2])
     field = "currency" if kind == "cur" else "category"
     with get_db_context() as db:
-        missing = _apply_field(gop, field, value, db)
+        missing, err = _apply_field(gop, field, value, db)
     await state.update_data(gop=gop, gop_missing=missing)
     await callback.answer()
     if missing:
         nxt = missing[0]
         await state.update_data(gop_ask=nxt)
         text = ASK_AR.get(nxt, "أكمل:")
+        if nxt == "amount" and err:
+            text = f"{err}\n{ASK_AR['amount']}"
         if nxt == "currency":
             await callback.message.answer(text, reply_markup=_currencies_kb())
         elif nxt == "category":

@@ -59,6 +59,15 @@ class TestNLParser:
         seed_all(db)
         p = NLOperationParser.parse(db, "يا محاسب سجل مصروف 50")
         assert "currency" in p.missing
+        # Currency is asked before amount when both needed
+        assert p.missing.index("currency") < p.missing.index("amount") if "amount" in p.missing else True
+
+    def test_withdraw_without_amount_asks_currency_first(self, db):
+        seed_all(db)
+        p = NLOperationParser.parse(db, "تسجيل سحب")
+        assert p.op_type == "withdrawal"
+        assert "currency" in p.missing
+        assert p.missing[0] == "currency"
 
     def test_intent_routes_to_write_op(self, db):
         seed_all(db)

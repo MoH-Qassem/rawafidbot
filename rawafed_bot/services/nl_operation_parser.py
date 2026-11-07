@@ -130,12 +130,14 @@ class NLOperationParser:
                 result.amount_minor = parse_user_amount(result.amount_text, currency)
             except MoneyError:
                 result.amount_minor = None
-                result.missing.append("amount")
 
-        if not result.amount_text:
-            result.missing.append("amount")
+        # Currency before amount so group collection can parse minor units next
         if not result.currency_id:
             result.missing.append("currency")
+        if not result.amount_text:
+            result.missing.append("amount")
+        elif result.currency_id and not result.amount_minor:
+            result.missing.append("amount")
         if result.op_type == "expense" and not result.category_id:
             result.missing.append("category")
         if not result.description:
