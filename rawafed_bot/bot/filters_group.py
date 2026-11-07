@@ -19,6 +19,9 @@ class GroupIntelligenceFilter(BaseFilter):
             return False
         if not message.text:
             return False
+        # Let /start /setup /status… reach their dedicated routers
+        if message.text.lstrip().startswith("/"):
+            return False
         if not message.from_user or is_bot_message(message, bot.id):
             return False
 

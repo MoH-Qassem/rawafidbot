@@ -72,7 +72,12 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         public = _is_public_event(event)
+        deny_text: Optional[str] = None
+        tip_text: Optional[str] = None
 
+        # CRITICAL: never await handlers while this session is open.
+        # Nested get_db_context() + BEGIN IMMEDIATE causes "database is locked"
+        # and silent failed replies on phone / group messages.
         with get_db_context() as db:
             known = AuthService.is_known_user(db, user.id)
             member = AuthService.get_member_by_telegram_id(db, user.id)
@@ -112,39 +117,37 @@ class AuthMiddleware(BaseMiddleware):
                             continue
                         finance_texts |= texts_for(btn)
                     if event.text.strip() in finance_texts:
-                        tip = (
+                        tip_text = (
                             "⚠️ لست مسجّلاً بعد.\n"
                             "أرسل /start داخل المجموعة لإكمال التسجيل، "
                             "أو اضغط «تسجيل عضويتي» بعد /setup."
                         )
-                        await event.answer(tip)
-                        return None
+            else:
+                if not known and not (member and member.is_active):
+                    deny_text = (
+                        "⚠️ أنت غير مسجّل في نظام روافد.\n"
+                        "في المجموعة سيظهر لك طلب التعرف عند أول تواصل، "
+                        "أو اضغط «تسجيل عضويتي» بعد /setup."
+                    )
+                else:
+                    try:
+                        member = AuthService.require_member(db, user.id)
+                        from rawafed_bot.database.seeder import seed_accounts
+                        seed_accounts(db)
+                        data["member"] = _detach_member(db, member)
+                    except PermissionError as exc:
+                        deny_text = str(exc)
 
-                return await handler(event, data)
+        if tip_text:
+            if isinstance(event, Message):
+                await event.answer(tip_text)
+            return None
 
-            if not known and not (member and member.is_active):
-                text = (
-                    "⚠️ أنت غير مسجّل في نظام روافد.\n"
-                    "في المجموعة سيظهر لك طلب التعرف عند أول تواصل، "
-                    "أو اضغط «تسجيل عضويتي» بعد /setup."
-                )
-                if isinstance(event, Message):
-                    await event.answer(text)
-                elif isinstance(event, CallbackQuery):
-                    await event.answer(text, show_alert=True)
-                return None
-
-            try:
-                member = AuthService.require_member(db, user.id)
-                from rawafed_bot.database.seeder import seed_accounts
-                seed_accounts(db)
-            except PermissionError as exc:
-                text = str(exc)
-                if isinstance(event, Message):
-                    await event.answer(text)
-                elif isinstance(event, CallbackQuery):
-                    await event.answer(text, show_alert=True)
-                return None
-            data["member"] = _detach_member(db, member)
+        if deny_text:
+            if isinstance(event, Message):
+                await event.answer(deny_text)
+            elif isinstance(event, CallbackQuery):
+                await event.answer(deny_text, show_alert=True)
+            return None
 
         return await handler(event, data)
