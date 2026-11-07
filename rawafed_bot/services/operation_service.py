@@ -164,6 +164,7 @@ class OperationService:
         member_id: int, description: str, created_by: int,
         idempotency_key: str = None,
     ) -> Transaction:
+        """مصروف على سجل العضو: يُصرف من الصندوق ويُسجَّل ديناً عليه لصالح الشركة."""
         try:
             from rawafed_bot.services.permissions_catalog import RECORD_EXPENSE
             if amount <= 0:
@@ -171,8 +172,8 @@ class OperationService:
             OperationService._require_actor_permission(db, created_by, RECORD_EXPENSE)
             OperationService._ensure_member(db, member_id)
             expense = AccountingEngine.get_account(db, "expense_summary", currency_id)
-            member_due = AccountingEngine.get_account(db, "member_due", currency_id, member_id)
-            if not expense or not member_due:
+            cash_box = AccountingEngine.get_account(db, "cash_box", currency_id)
+            if not expense or not cash_box:
                 raise OperationError("الحسابات المحاسبية غير موجودة لهذه العملة.")
             if not idempotency_key:
                 idempotency_key = generate_idempotency_key(
@@ -195,8 +196,8 @@ class OperationService:
             )
             db.add(debt)
             lines = [
-                JournalLineData(expense.id, debit=amount, credit=0, description="مصروف دفعه العضو من ماله"),
-                JournalLineData(member_due.id, debit=0, credit=amount, description="دين الشركة للعضو"),
+                JournalLineData(expense.id, debit=amount, credit=0, description="مصروف على حساب العضو"),
+                JournalLineData(cash_box.id, debit=0, credit=amount, description="صرف من الصندوق — دين على العضو"),
             ]
             AccountingEngine.create_journal_entry(
                 db=db, currency_id=currency_id, description=description,
@@ -215,6 +216,7 @@ class OperationService:
         description: str, created_by: int, debt_id: int,
         idempotency_key: str = None,
     ) -> Transaction:
+        """تسديد دين العضو للشركة — يدخل المبلغ إلى الصندوق."""
         try:
             from rawafed_bot.services.permissions_catalog import VIEW_DEBTS
             if amount <= 0:
@@ -229,8 +231,8 @@ class OperationService:
                     f"المبلغ المطلوب ({amount}) أكبر من الدين المتبقي ({debt.remaining})."
                 )
             cash_box = AccountingEngine.get_account(db, "cash_box", currency_id)
-            member_due = AccountingEngine.get_account(db, "member_due", currency_id, member_id)
-            if not cash_box or not member_due:
+            expense = AccountingEngine.get_account(db, "expense_summary", currency_id)
+            if not cash_box or not expense:
                 raise OperationError("الحسابات المحاسبية غير موجودة لهذه العملة.")
             if not idempotency_key:
                 idempotency_key = generate_idempotency_key(
@@ -250,9 +252,10 @@ class OperationService:
             if debt.remaining == 0:
                 debt.status = "repaid"
             db.add(debt)
+            # Member pays company → cash increases; offset expense (recovery)
             lines = [
-                JournalLineData(member_due.id, debit=amount, credit=0, description="تسديد مستحقات العضو"),
-                JournalLineData(cash_box.id, debit=0, credit=amount, description="دفع نقدي من الصندوق"),
+                JournalLineData(cash_box.id, debit=amount, credit=0, description="تحصيل دين في الصندوق"),
+                JournalLineData(expense.id, debit=0, credit=amount, description="تسديد دين عضو"),
             ]
             AccountingEngine.create_journal_entry(
                 db=db, currency_id=currency_id, description=description,

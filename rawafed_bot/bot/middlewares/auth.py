@@ -86,9 +86,8 @@ class AuthMiddleware(BaseMiddleware):
                 member_active = bool(member and member.is_active)
                 if AuthService.is_ceo(user.id):
                     try:
+                        # require_member ensures CEO row; accounts seeded at boot / member create
                         member = AuthService.require_member(db, user.id)
-                        from rawafed_bot.database.seeder import seed_accounts
-                        seed_accounts(db)
                         data["member"] = _detach_member(db, member)
                         member_active = bool(data["member"] and data["member"].is_active)
                     except PermissionError:
@@ -132,8 +131,6 @@ class AuthMiddleware(BaseMiddleware):
                 else:
                     try:
                         member = AuthService.require_member(db, user.id)
-                        from rawafed_bot.database.seeder import seed_accounts
-                        seed_accounts(db)
                         data["member"] = _detach_member(db, member)
                     except PermissionError as exc:
                         deny_text = str(exc)

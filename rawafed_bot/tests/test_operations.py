@@ -33,22 +33,38 @@ class TestOperations:
         db.refresh(cash_box)
         assert cash_box.balance == 800
 
-    def test_personal_expense_no_cash_impact_creates_debt(self, db):
+    def test_personal_expense_hits_cash_and_creates_debt(self, db):
         seed_all(db)
         member = db.query(Account).filter_by(account_type="member_equity").first().member
         currency_id = db.query(Account).filter_by(account_type="cash_box").first().currency_id
         cash_box = db.query(Account).filter_by(account_type="cash_box", currency_id=currency_id).first()
+        OperationService.record_deposit(
+            db=db, amount=100, currency_id=currency_id, member_id=member.id,
+            description="dep", created_by=member.id,
+        )
         tx = OperationService.record_personal_expense(
             db=db, amount=50, currency_id=currency_id, category_id=1,
             member_id=member.id, description="personal", created_by=member.id,
         )
         db.refresh(cash_box)
-        assert cash_box.balance == 0
+        assert cash_box.balance == 50
         debt = db.query(MemberDebt).filter_by(transaction_id=tx.id).first()
         assert debt is not None
         assert debt.remaining == 50
 
-    def test_debt_repayment_reduces_debt_and_cash(self, db):
+    def test_personal_expense_allows_negative_cash(self, db):
+        seed_all(db)
+        member = db.query(Account).filter_by(account_type="member_equity").first().member
+        currency_id = db.query(Account).filter_by(account_type="cash_box").first().currency_id
+        cash_box = db.query(Account).filter_by(account_type="cash_box", currency_id=currency_id).first()
+        OperationService.record_personal_expense(
+            db=db, amount=75, currency_id=currency_id, category_id=1,
+            member_id=member.id, description="over", created_by=member.id,
+        )
+        db.refresh(cash_box)
+        assert cash_box.balance == -75
+
+    def test_debt_repayment_reduces_debt_and_restores_cash(self, db):
         seed_all(db)
         member = db.query(Account).filter_by(account_type="member_equity").first().member
         currency_id = db.query(Account).filter_by(account_type="cash_box").first().currency_id
@@ -69,7 +85,7 @@ class TestOperations:
         db.refresh(debt)
         db.refresh(cash_box)
         assert debt.remaining == 30
-        assert cash_box.balance == 980
+        assert cash_box.balance == 970
 
     def test_advance_withdrawal_not_expense(self, db):
         seed_all(db)
@@ -143,7 +159,7 @@ class TestOperations:
         tx_count_before = db.query(Transaction).count()
         with pytest.raises(Exception):
             OperationService.record_expense_from_box(
-                db=db, amount=100, currency_id=currency_id, category_id=1,
+                db=db, amount=0, currency_id=currency_id, category_id=1,
                 member_id=member.id, description="exp", created_by=member.id,
             )
         tx_count_after = db.query(Transaction).count()

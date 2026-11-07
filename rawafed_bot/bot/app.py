@@ -120,11 +120,13 @@ async def run_bot() -> None:
             ",".join(allowed),
         )
         # handle_signals=True: clean SIGINT/SIGTERM on Linux (FadeHost)
+        # Sequential handling avoids SQLite write races under load.
         await dp.start_polling(
             bot,
             allowed_updates=allowed,
             handle_signals=True,
             close_bot_session=False,
+            handle_as_tasks=False,
         )
     finally:
         if scheduler is not None and scheduler.running:

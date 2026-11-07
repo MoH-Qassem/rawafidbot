@@ -28,9 +28,17 @@ def members(db: Session) -> list[Member]:
 
 
 def m(amount: str | int | float, code: str, db: Session) -> int:
-    """Human amount → minor units for currency code."""
+    """Human amount → minor units for currency code (supports negative)."""
     cur = currency_by_code(db, code)
-    return to_minor_units(amount, cur.decimal_places)
+    from decimal import Decimal
+    from rawafed_bot.utils.money import normalize_amount_text
+
+    if isinstance(amount, str):
+        value = Decimal(normalize_amount_text(amount))
+    else:
+        value = Decimal(str(amount))
+    sign = -1 if value < 0 else 1
+    return sign * to_minor_units(abs(value), cur.decimal_places)
 
 
 def cat_id(db: Session) -> int:

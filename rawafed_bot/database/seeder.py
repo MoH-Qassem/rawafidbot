@@ -84,6 +84,7 @@ def seed_accounts(db: Session):
     members = db.query(Member).all()
 
     existing = {(a.account_type, a.currency_id, a.member_id) for a in db.query(Account).all()}
+    added = 0
 
     for currency in currencies:
         # Cash box per currency
@@ -95,6 +96,7 @@ def seed_accounts(db: Session):
                 currency_id=currency.id,
                 balance=0,
             ))
+            added += 1
         # Expense summary per currency
         key = ("expense_summary", currency.id, None)
         if key not in existing:
@@ -104,6 +106,7 @@ def seed_accounts(db: Session):
                 currency_id=currency.id,
                 balance=0,
             ))
+            added += 1
         # Revenue per currency
         key = ("revenue", currency.id, None)
         if key not in existing:
@@ -113,6 +116,7 @@ def seed_accounts(db: Session):
                 currency_id=currency.id,
                 balance=0,
             ))
+            added += 1
         # Member accounts per currency
         for member in members:
             key = ("member_equity", currency.id, member.id)
@@ -124,6 +128,7 @@ def seed_accounts(db: Session):
                     currency_id=currency.id,
                     balance=0,
                 ))
+                added += 1
             key = ("member_due", currency.id, member.id)
             if key not in existing:
                 db.add(Account(
@@ -133,6 +138,7 @@ def seed_accounts(db: Session):
                     currency_id=currency.id,
                     balance=0,
                 ))
+                added += 1
             key = ("advance_pending", currency.id, member.id)
             if key not in existing:
                 db.add(Account(
@@ -142,7 +148,9 @@ def seed_accounts(db: Session):
                     currency_id=currency.id,
                     balance=0,
                 ))
-    db.commit()
+                added += 1
+    if added:
+        db.commit()
 
 
 def seed_expense_categories(db: Session):

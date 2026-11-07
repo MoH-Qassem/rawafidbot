@@ -107,33 +107,28 @@ class TestExpenseAudit:
         assert expense_acc(db, "USD").balance == m(500, "USD", db)
         assert_stored_balances_match_ledger(db)
 
-    def test_personal_expense_no_cash_hit(self, db):
+    def test_personal_expense_hits_cash_and_creates_member_debt(self, db):
         seed_all(db)
         mem = members(db)[0]
         cur = currency_by_code(db, "USD")
         OperationService.record_deposit(db, m(100, "USD", db), cur.id, mem.id, "d", mem.id, "pe-d")
-        before = cash(db, "USD").balance
         OperationService.record_personal_expense(
             db, m(25, "USD", db), cur.id, cat_id(db), mem.id, "pers", mem.id, "pe-1"
         )
-        assert cash(db, "USD").balance == before
+        assert cash(db, "USD").balance == m(75, "USD", db)
         from rawafed_bot.database.models.debt import MemberDebt
         debt = db.query(MemberDebt).filter_by(member_id=mem.id).one()
         assert debt.remaining == m(25, "USD", db)
 
-    def test_expense_over_cash_rejected_and_rolled_back(self, db):
+    def test_expense_over_cash_allowed_negative_balance(self, db):
         seed_all(db)
         mem = members(db)[0]
         cur = currency_by_code(db, "USD")
         OperationService.record_deposit(db, m(50, "USD", db), cur.id, mem.id, "d", mem.id, "ov-d")
-        from rawafed_bot.database.models.transaction import Transaction
-        before = db.query(Transaction).count()
-        with pytest.raises((OperationError, Exception)):
-            OperationService.record_expense_from_box(
-                db, m(51, "USD", db), cur.id, cat_id(db), mem.id, "big", mem.id, "ov-e"
-            )
-        assert cash(db, "USD").balance == m(50, "USD", db)
-        assert db.query(Transaction).count() == before
+        OperationService.record_expense_from_box(
+            db, m(51, "USD", db), cur.id, cat_id(db), mem.id, "big", mem.id, "ov-e"
+        )
+        assert cash(db, "USD").balance == -m(1, "USD", db)
 
     def test_reverse_expense_restores_cash(self, db):
         seed_all(db)

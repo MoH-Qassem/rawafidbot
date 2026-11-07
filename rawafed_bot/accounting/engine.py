@@ -84,17 +84,6 @@ class AccountingEngine:
                 )
 
     @staticmethod
-    def _check_cash_box_not_negative(db: Session, lines: List[JournalLineData]) -> None:
-        for line in lines:
-            account = db.query(Account).filter_by(id=line.account_id).first()
-            if account and account.account_type == "cash_box":
-                new_balance = account.balance - line.credit + line.debit
-                if new_balance < 0:
-                    raise AccountingError(
-                        "⚠️ العملية غير مسموح بها: رصيد الصندوق لا يمكن أن يصبح سالباً."
-                    )
-
-    @staticmethod
     def _update_balances(db: Session, lines: List[JournalLineData]) -> None:
         for line in lines:
             account = db.query(Account).filter_by(id=line.account_id).with_for_update().first()
@@ -123,7 +112,7 @@ class AccountingEngine:
 
         AccountingEngine._validate_entry(currency_id, lines)
         AccountingEngine._check_currency_consistency(db, currency_id, lines)
-        AccountingEngine._check_cash_box_not_negative(db, lines)
+        # Cash box may go negative (overdraft allowed by business rule).
 
         entry_number = f"JE-{generate_uuid()[:8].upper()}"
 

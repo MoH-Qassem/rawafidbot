@@ -102,9 +102,13 @@ async def enter_description(message: Message, state: FSMContext):
     with get_db_context() as db:
         currency = db.query(Currency).filter_by(id=data["currency_id"]).first()
         cat = db.query(ExpenseCategory).filter_by(id=data["category_id"]).first()
-    mode_ar = "من الصندوق" if data["mode"] == "box" else "شخصي (دين)"
+    if data["mode"] == "box":
+        mode_ar = "من الصندوق (شركة — بدون دين)"
+    else:
+        mode_ar = "على سجل العضو (يُصرف من الصندوق + دين عليه)"
     summary = (
-        "تأكيد تسجيل المصروف:\n"
+        "✅ تأكيد تسجيل المصروف\n"
+        "━━━━━━━━━━━━\n"
         f"النوع: {mode_ar}\n"
         f"المبلغ: {money_line(data['amount'], currency)}\n"
         f"التصنيف: {cat.name if cat else data['category_id']}\n"

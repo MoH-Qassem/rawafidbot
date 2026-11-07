@@ -82,8 +82,11 @@ def categories_inline(categories: Sequence[ExpenseCategory]) -> InlineKeyboardMa
 def expense_mode_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="من الصندوق", callback_data=pack(EXP_MODE, "box"))],
-            [InlineKeyboardButton(text="شخصي (دين على الشركة)", callback_data=pack(EXP_MODE, "personal"))],
+            [InlineKeyboardButton(text="من الصندوق (شركة)", callback_data=pack(EXP_MODE, "box"))],
+            [InlineKeyboardButton(
+                text="على سجل العضو (يدين الصندوق)",
+                callback_data=pack(EXP_MODE, "personal"),
+            )],
             [InlineKeyboardButton(text="إلغاء", callback_data=pack(CONFIRM, "flow", "no"))],
         ]
     )

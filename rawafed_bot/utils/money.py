@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from rawafed_bot.database.models.currency import Currency
 
-# Eastern Arabic + Persian digits → ASCII
+# Eastern Arabic + Persian digits → ASCII (English digits already pass through)
 _ARABIC_DIGIT_MAP = str.maketrans(
     "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹",
     "01234567890123456789",
@@ -20,14 +20,27 @@ class MoneyError(Exception):
 
 
 def normalize_amount_text(text: str) -> str:
-    """Normalize user amount text: Arabic digits, spaces, thousand separators."""
+    """Normalize amount: Arabic/English digits, spaces, Arabic/Latin separators."""
     raw = (text or "").strip().translate(_ARABIC_DIGIT_MAP)
-    raw = raw.replace(" ", "").replace("\u00a0", "").replace("٬", "").replace("،", "")
+    # Strip currency words / symbols that users often type with the number
+    for token in ("USD", "SYP", "TRY", "ليرة", "دولار", "تركي", "سوري", "$", "£", "₺"):
+        raw = raw.replace(token, "")
+    raw = (
+        raw.replace(" ", "")
+        .replace("\u00a0", "")
+        .replace("٬", "")   # Arabic thousands
+        .replace("،", "")   # Arabic comma
+        .replace("٫", ".")  # Arabic decimal separator
+        .replace("'", "")
+    )
     # Keep one decimal separator: prefer last '.' or ','
     if raw.count(",") == 1 and raw.count(".") == 0:
         raw = raw.replace(",", ".")
     else:
         raw = raw.replace(",", "")
+    # Allow leading + / leave minus for signed display paths
+    if raw.startswith("+"):
+        raw = raw[1:]
     return raw
 
 
@@ -90,10 +103,14 @@ def from_minor_units(amount: int, decimal_places: int) -> Decimal:
 
 def format_amount(amount: int, currency: Currency) -> str:
     value = from_minor_units(amount, currency.decimal_places)
+    neg = value < 0
+    value = abs(value)
     if currency.decimal_places == 0:
         formatted = f"{int(value):,}"
     else:
         formatted = f"{value:,.{currency.decimal_places}f}"
+    if neg:
+        formatted = f"-{formatted}"
     return f"{formatted} {currency.code}"
 
 

@@ -51,27 +51,29 @@ class TestIntegratedScenario:
         assert cash_box.balance == 900
         assert expense_acc.balance == 100
 
-        # 3. Personal expense 50 USD by member1
+        # 3. Personal expense 50 USD by member1 (from cash + debt on member)
         tx_personal = OperationService.record_personal_expense(
             db=db, amount=50, currency_id=usd_currency_id, category_id=1,
             member_id=member1.id, description="مصروف شخصي", created_by=member1.id,
         )
         db.refresh(cash_box)
         db.refresh(expense_acc)
-        assert cash_box.balance == 900  # unchanged
+        assert cash_box.balance == 850
         assert expense_acc.balance == 150
         debt = db.query(MemberDebt).filter_by(transaction_id=tx_personal.id).first()
         assert debt.remaining == 50
 
-        # 4. Debt repayment 20 USD
+        # 4. Debt repayment 20 USD (cash returns to box)
         OperationService.record_debt_repayment(
             db=db, amount=20, currency_id=usd_currency_id, member_id=member1.id,
             description="تسديد جزئي", created_by=member1.id, debt_id=debt.id,
         )
         db.refresh(cash_box)
         db.refresh(debt)
-        assert cash_box.balance == 880
+        db.refresh(expense_acc)
+        assert cash_box.balance == 870
         assert debt.remaining == 30
+        assert expense_acc.balance == 130
 
         # 5. Advance withdrawal 200 USD to member2
         tx_adv, advance = OperationService.record_withdrawal_as_advance(
@@ -79,7 +81,7 @@ class TestIntegratedScenario:
             description="سحب عهدة", purpose="سفر", created_by=member2.id,
         )
         db.refresh(cash_box)
-        assert cash_box.balance == 680
+        assert cash_box.balance == 670
         assert advance.status == "open"
 
         # 6. Settle advance: 150 expense + 50 returned
@@ -90,8 +92,8 @@ class TestIntegratedScenario:
         db.refresh(cash_box)
         db.refresh(expense_acc)
         db.refresh(advance)
-        assert cash_box.balance == 730
-        assert expense_acc.balance == 300
+        assert cash_box.balance == 720
+        assert expense_acc.balance == 280
         assert advance.status == "fully_settled"
         assert settlement.additional_amount == 0
 
@@ -103,8 +105,5 @@ class TestIntegratedScenario:
             total_credit = sum(line.credit for line in lines)
             assert total_debit == total_credit, f"Entry {entry.entry_number} is unbalanced"
 
-        # Verify total expense balance matches 300 (no duplicates)
-        assert expense_acc.balance == 300
-
-        # Verify debt accuracy
+        assert expense_acc.balance == 280
         assert debt.remaining == 30

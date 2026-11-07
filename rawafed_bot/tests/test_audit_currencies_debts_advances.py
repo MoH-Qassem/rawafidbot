@@ -56,7 +56,8 @@ class TestDebtAudit:
         debt = db.query(MemberDebt).filter_by(member_id=ahmad.id).one()
         assert debt.remaining == m(100, "USD", db)
         assert expense_acc(db, "USD").balance == m(100, "USD", db)
-        cash_before_repay = cash(db, "USD").balance
+        # deposit 500 − personal 100 = 400
+        assert cash(db, "USD").balance == m(400, "USD", db)
 
         OperationService.record_debt_repayment(
             db, m(30, "USD", db), cur.id, ahmad.id, "r1", ahmad.id, debt.id, "d-r1"
@@ -66,9 +67,10 @@ class TestDebtAudit:
         )
         db.refresh(debt)
         assert debt.remaining == m(50, "USD", db)
-        assert cash(db, "USD").balance == cash_before_repay - m(50, "USD", db)
-        # repayment is not a new expense
-        assert expense_acc(db, "USD").balance == m(100, "USD", db)
+        # repayments return cash to the box
+        assert cash(db, "USD").balance == m(450, "USD", db)
+        # net expense after recovery
+        assert expense_acc(db, "USD").balance == m(50, "USD", db)
         expense_txs = db.query(Transaction).filter(
             Transaction.transaction_type.in_(["expense", "personal_expense"]),
             Transaction.status == "active",

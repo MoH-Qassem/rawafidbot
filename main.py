@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
+from pathlib import Path
 
 from rawafed_bot.core.config import settings
 from rawafed_bot.core.version import CODE_BUILD_ID, MENU_VERSION
@@ -15,6 +17,27 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _maybe_wipe_database() -> None:
+    """One-shot wipe when RESET_DB=1 (then clear the env flag in the host panel)."""
+    flag = os.getenv("RESET_DB", "").strip().lower()
+    if flag not in {"1", "true", "yes"}:
+        return
+    db_path = Path(settings.db_path)
+    for candidate in (
+        db_path,
+        Path(f"{db_path}-wal"),
+        Path(f"{db_path}-shm"),
+        Path(f"{db_path}-journal"),
+    ):
+        try:
+            if candidate.exists():
+                candidate.unlink()
+                logger.warning("RESET_DB: deleted %s", candidate)
+        except OSError as exc:
+            logger.error("RESET_DB: failed to delete %s: %s", candidate, exc)
+    logger.warning("RESET_DB: wipe complete — fresh schema/seed will follow.")
 
 
 def setup():
@@ -33,6 +56,7 @@ def setup():
         settings.db_path,
         settings.LOG_LEVEL,
     )
+    _maybe_wipe_database()
     existed = init_db()
     if existed:
         logger.info(

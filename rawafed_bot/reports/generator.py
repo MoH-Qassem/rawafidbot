@@ -19,8 +19,8 @@ TYPE_LABELS = {
     "deposit": "إيداع",
     "expense": "مصروف",
     "withdrawal": "سحب",
-    "personal_expense": "مصروف شخصي",
-    "debt_repayment": "تسديد دين",
+    "personal_expense": "مصروف على العضو",
+    "debt_repayment": "تحصيل دين",
     "advance_issued": "عهدة",
     "advance_settlement": "تسوية عهدة",
     "reversal": "عكس قيد",
@@ -34,11 +34,18 @@ class ReportGenerator:
 
     @staticmethod
     def cash_box_text(db: Session) -> str:
-        lines = ["💰 حالة الصندوق", "────────────"]
-        for row in QueryService.cash_box_balances(db):
-            lines.append(ReportGenerator._fmt(row["balance"], row["currency"]))
-        if len(lines) == 2:
+        lines = ["💰 حالة الصندوق", "━━━━━━━━━━━━━━━━"]
+        rows = list(QueryService.cash_box_balances(db))
+        if not rows:
             lines.append("لا توجد أرصدة.")
+            return "\n".join(lines)
+        for row in rows:
+            bal = row["balance"]
+            label = ReportGenerator._fmt(bal, row["currency"])
+            if bal < 0:
+                lines.append(f"⚠️  {label}  (سالب)")
+            else:
+                lines.append(f"•  {label}")
         return "\n".join(lines)
 
     @staticmethod

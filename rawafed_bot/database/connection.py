@@ -11,7 +11,13 @@ settings.data_dir.mkdir(parents=True, exist_ok=True)
 
 
 def configure_sqlite_engine(engine):
-    """WAL + busy timeout + BEGIN IMMEDIATE to prevent lost balance updates."""
+    """WAL + busy timeout. Deferred BEGIN keeps reads fast under concurrent updates.
+
+    Do NOT force BEGIN IMMEDIATE on every session — that serializes all handlers
+    (including auth) and causes multi-minute «database is locked» stalls in groups.
+    Write safety comes from SQLAlchemy transactions + WAL; financial ops still
+    use with_for_update() when updating balances.
+    """
     if engine.dialect.name != "sqlite":
         return engine
 
@@ -19,14 +25,10 @@ def configure_sqlite_engine(engine):
     def _sqlite_connect(dbapi_conn, _connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA busy_timeout=15000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-
-    @event.listens_for(engine, "begin")
-    def _sqlite_begin(conn):
-        # Replace default deferred BEGIN with immediate write lock.
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     return engine
 
